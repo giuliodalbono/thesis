@@ -1,9 +1,12 @@
 from unified_planning.shortcuts import *
 from unified_planning.engines import PlanGenerationResultStatus
+from unified_planning.environment import get_environment
+
+get_environment().credits_stream = None
 
 
 def define_problem(env, current_state):
-    problem = Problem("frozenlake")
+    problem = Problem("FrozenLake-v1")
 
     n_states = env.observation_space.n
 
@@ -67,13 +70,5 @@ def build_plan(problem):
 
         if result.status == PlanGenerationResultStatus.SOLVED_SATISFICING:
             plan = result.plan
-            actions = extract_plan(plan)
-
-            print("\nPlan found:")
-            for i, act in enumerate(actions):
-                print(f"{i}: {act}")
-
-            return actions
-        else:
-            print("\nPlan not found")
-            exit(1)
+            return extract_plan(plan)
+        return None

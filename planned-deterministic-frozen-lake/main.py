@@ -1,17 +1,13 @@
-import gymnasium as gym
-import planner
+from dqn_agent import train_dqn, test_dqn
 
 
 def main():
-    env = gym.make("FrozenLake-v1", is_slippery=False)
+    print("FrozenLake: DQN + classical planner")
 
-    state, _ = env.reset()
-
-    print(f"Initial State: {state}")
-
-    problem = planner.define_problem(env, state)
-    plan = planner.build_plan(problem)
-    print(f"\nFirst action to take: {plan[0]}")
+    print("--- Training ---")
+    dqn_agent = train_dqn()
+    print("--- Evaluation ---")
+    test_dqn(dqn_agent)
 
 
 if __name__ == "__main__":
