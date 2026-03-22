@@ -20,12 +20,20 @@ def pick_device() -> torch.device:
     return torch.device("cpu")
 
 
+def set_seed(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
 ENV_ID = "FrozenLake-v1"
 GAMMA = 0.99
 LR = 1e-3
 EPSILON_START = 1.0
 EPSILON_MIN = 0.05
-EPSILON_DECAY_STEPS = 2000
+EPSILON_DECAY_STEPS = 1000
 MEMORY_SIZE = 5000
 BATCH_SIZE = 64
 WARM_UP_STEPS = 200  # No training until buffer has enough samples
@@ -55,7 +63,7 @@ class QNetwork(nn.Module):
 # DQN Agent
 # ===============================
 class DQNAgent:
-    def __init__(self, state_size, action_size, device=None):
+    def __init__(self, state_size, action_size, use_planner, device=None):
         self.state_size = state_size
         self.action_size = action_size
 
@@ -67,6 +75,7 @@ class DQNAgent:
         self.warm_up_steps = WARM_UP_STEPS
         self.target_update_steps = TARGET_UPDATE_STEPS
 
+        self.use_planner = use_planner
         self.device = device if device is not None else pick_device()
 
         self.model = QNetwork(state_size, action_size).to(self.device)
@@ -101,7 +110,7 @@ class DQNAgent:
 
     def select_action(self, env, state):
         # planner-guided step
-        if self.steps_done % K_PLANNER == 0:
+        if self.use_planner and self.steps_done % K_PLANNER == 0:
             planned_action = self.planner_action(env, state)
             if planned_action is not None:
                 return planned_action
@@ -172,14 +181,17 @@ def _win_rate(reward_list):
     return sum(1 for r in reward_list if r > 0) / len(reward_list)
 
 
-def train_dqn(episodes=300, log_every=50):
+def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
+    set_seed(rng_seed)
+    env_base = env_seed
+
     env = gym.make(ENV_ID, is_slippery=False)
 
     state_size = env.observation_space.n
     action_size = env.action_space.n
 
     device = pick_device()
-    agent = DQNAgent(state_size, action_size, device=device)
+    agent = DQNAgent(state_size, action_size, use_planner=use_planner, device=device)
 
     print(
         "[train] start | "
@@ -192,7 +204,7 @@ def train_dqn(episodes=300, log_every=50):
     rewards = []
 
     for ep in range(episodes):
-        state, _ = env.reset()
+        state, _ = env.reset(seed=env_base)
         done = False
         total_reward = 0
 
@@ -251,14 +263,18 @@ def train_dqn(episodes=300, log_every=50):
 # ===============================
 # TEST
 # ===============================
-def test_dqn(agent, episodes=100):
+def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
+    set_seed(rng_seed)
+    env_base = env_seed
+
     env = gym.make(ENV_ID, is_slippery=False)
     agent.epsilon = 0.0
     agent.steps_done = 0
+    agent.planner_calls = 0
 
     episode_rewards = []
     for _ in range(episodes):
-        state, _ = env.reset()
+        state, _ = env.reset(seed=env_base)
         done = False
         total_reward = 0
 
@@ -277,10 +293,16 @@ def test_dqn(agent, episodes=100):
     mean_r = sum(episode_rewards) / len(episode_rewards)
     last_n = min(50, episodes)
     win_last_n = 100 * _win_rate(episode_rewards[-last_n:])
+
+    pm = agent.planner_misses
+    pc = agent.planner_calls
+    miss_pct = 100.0 * pm / pc if pc else 0.0
     print(
         "[test] summary | "
         f"episodes={episodes} | "
         f"success_rate_all={100 * wins / episodes:.1f}% | "
         f"success_rate_last{last_n}={win_last_n:.1f}% | "
-        f"mean_reward={mean_r:.3f}"
+        f"mean_reward={mean_r:.3f} | "
+        f"steps_done={agent.steps_done:.3f} | "
+        f"planner_miss={pm}/{pc} ({miss_pct:.1f}%)"
     )
