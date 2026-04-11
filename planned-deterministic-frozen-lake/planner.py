@@ -32,30 +32,35 @@ def define_problem(env, current_state):
     # Valid transitions from environment
     # transitions[s][a] contains  all possible tuples (prob, next_state, reward, done) for the state s and action a
     transitions = env.unwrapped.P
+    # With slippery environment, there can happen there is more than one (s, next, a), UP wants unique action names,
+    # so we use a set for avoiding duplication
+    action_names: set[str] = set()
 
     # For all states
     for s in range(n_states):
         # For all actions possible
         for a in range(4):
-            # Take just first tuple (deterministic version because of no slippery, so just one next state possible if
-            # taking action a)
-            prob, next_state, reward, done = transitions[s][a][0]
+            for outcome in transitions[s][a]:
+                prob, next_state, reward, done = outcome
 
-            # Skip impossible actions
-            if prob == 0:
-                continue
+                if prob == 0:
+                    continue
 
-            action_name = f"move_{s}_{next_state}_{a}"
-            action = InstantaneousAction(action_name)
+                action_name = f"move_{s}_{next_state}_{a}"
+                if action_name in action_names:
+                    continue
+                action_names.add(action_name)
 
-            from_l = locations[s]
-            to_l = locations[next_state]
+                action = InstantaneousAction(action_name)
 
-            action.add_precondition(at(from_l))
-            action.add_effect(at(from_l), False)
-            action.add_effect(at(to_l), True)
+                from_l = locations[s]
+                to_l = locations[next_state]
 
-            problem.add_action(action)
+                action.add_precondition(at(from_l))
+                action.add_effect(at(from_l), False)
+                action.add_effect(at(to_l), True)
+
+                problem.add_action(action)
 
     return problem
 

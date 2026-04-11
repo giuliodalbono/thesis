@@ -10,7 +10,7 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 from collections import deque
-from typing import Dict, List, Optional
+from typing import Deque, Dict, List, Optional, Tuple
 
 import planner
 
@@ -31,18 +31,16 @@ def set_seed(seed: int) -> None:
 
 ENV_ID = "FrozenLake-v1"
 GAMMA = 0.99
-# Più conservativo di 1e-3: su one-hot + MLP piccola riduce oscillazioni su reward rari.
-LR = 5e-4
+LR = 1e-3
 EPSILON_START = 1.0
-# In coda al training vuoi abbastanza exploit da far emergere la greedy policy in test.
-EPSILON_MIN = 0.02
+EPSILON_MIN = 0.05
 EPSILON_DECAY_STEPS = 5000
 MEMORY_SIZE = 5000
 BATCH_SIZE = 64
 WARM_UP_STEPS = 128
 TARGET_UPDATE_STEPS = 50
 # For each call to the planner in exploration: how many actions of the plan to execute consecutively
-PLANNED_ACTIONS_FROM_PLAN = 2
+PLANNED_ACTIONS_FROM_PLAN = 1
 
 
 # ===============================
@@ -95,11 +93,15 @@ class DQNAgent:
         self.planner_calls = 0
         self.planner_misses = 0
         self.planner_cache_hits = 0
-        self._plan_action_queue = deque()
+        self._plan_action_queue: Deque[Tuple[int, int]] = deque()
         self._plan_cache: Dict[int, Optional[List[str]]] = {}
+        self._await_planned_outcome = False
+        self._expected_next_state_after_planned_action = -1
 
     def flush_pending_plan_actions(self):
         self._plan_action_queue.clear()
+        self._await_planned_outcome = False
+        self._expected_next_state_after_planned_action = -1
 
     def flush_plan_cache(self):
         self._plan_cache.clear()
@@ -111,17 +113,21 @@ class DQNAgent:
 
     def select_action(self, env, state):
         if self._plan_action_queue:
-            return self._plan_action_queue.popleft()
+            action, expected_next = self._plan_action_queue.popleft()
+            self._set_planned_step_expectation(expected_next)
+            return action
 
         if random.random() < self.epsilon:
             return self.select_explore_action(env, state)
 
+        self._clear_planned_step_expectation()
         return self.select_exploit_action(state)
 
     def select_explore_action(self, env, state):
         if self.use_planner:
             return self.select_planned_action(env, state)
 
+        self._clear_planned_step_expectation()
         return random.randrange(self.action_size)
 
     def select_exploit_action(self, state):
@@ -134,10 +140,30 @@ class DQNAgent:
     def select_planned_action(self, env, state):
         planned_actions = self.get_planned_actions(env, state)
         if not planned_actions:
+            self._clear_planned_step_expectation()
             return random.randrange(self.action_size)
+        first_action, first_expected_next = planned_actions[0]
+        self._set_planned_step_expectation(first_expected_next)
         if len(planned_actions) > 1:
             self._plan_action_queue.extend(planned_actions[1:])
-        return planned_actions[0]
+        return first_action
+
+    def _set_planned_step_expectation(self, expected_next_state: int) -> None:
+        self._await_planned_outcome = True
+        self._expected_next_state_after_planned_action = expected_next_state
+
+    def _clear_planned_step_expectation(self) -> None:
+        self._await_planned_outcome = False
+        self._expected_next_state_after_planned_action = -1
+
+    def validate_planned_transition(self, next_state: int) -> None:
+        if not self.use_planner or not self._await_planned_outcome:
+            self._clear_planned_step_expectation()
+            return
+        if next_state != self._expected_next_state_after_planned_action:
+            self.flush_pending_plan_actions()
+        else:
+            self._clear_planned_step_expectation()
 
     def get_planned_actions(self, env, state):
         if state in self._plan_cache:
@@ -155,10 +181,13 @@ class DQNAgent:
             return None
 
         n = min(self.planned_actions_from_plan, len(plan))
-        out = []
+        out: List[Tuple[int, int]] = []
         for i in range(n):
-            # E.g.: "move_0_1_2" → 2
-            out.append(int(plan[i].split("_")[-1]))
+            # "move_{s}_{next_state}_{a}" → (gym_action, expected_next_state)
+            parts = plan[i].split("_")
+            gym_action = int(parts[-1])
+            expected_next = int(parts[-2])
+            out.append((gym_action, expected_next))
         return out
 
     def store(self, transition):
@@ -234,6 +263,7 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
         "[train] start | "
         f"device={device} | "
         f"lr={LR} gamma={GAMMA} | "
+        f"plan_horizon={agent.planned_actions_from_plan} | "
         f"batch={BATCH_SIZE} warm_up={WARM_UP_STEPS} target_update={TARGET_UPDATE_STEPS} | "
         f"episodes={episodes}"
     )
@@ -251,6 +281,8 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
 
             next_state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
+
+            agent.validate_planned_transition(next_state)
 
             agent.store((state, action, reward, next_state, done))
 
@@ -300,6 +332,7 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
         )
     print(" | ".join(parts))
 
+    agent.training_rewards = rewards
     return agent
 
 
@@ -329,6 +362,7 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
             action = agent.select_action(env, state)
             state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
+            agent.validate_planned_transition(state)
             total_reward += reward
             agent.steps_done += 1
 
@@ -349,3 +383,4 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
         f"mean_reward={mean_r:.3f} | "
         f"steps_done={agent.steps_done}"
     )
+    return episode_rewards
