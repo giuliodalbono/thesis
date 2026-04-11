@@ -30,16 +30,16 @@ def set_seed(seed: int) -> None:
 
 ENV_ID = "FrozenLake-v1"
 GAMMA = 0.99
-LR = 1e-3
+# Più conservativo di 1e-3: su one-hot + MLP piccola riduce oscillazioni su reward rari.
+LR = 5e-4
 EPSILON_START = 1.0
-EPSILON_MIN = 0.05
-EPSILON_DECAY_STEPS = 1000
+# In coda al training vuoi abbastanza exploit da far emergere la greedy policy in test.
+EPSILON_MIN = 0.02
+EPSILON_DECAY_STEPS = 5000
 MEMORY_SIZE = 5000
 BATCH_SIZE = 64
-WARM_UP_STEPS = 200  # No training until buffer has enough samples
-TARGET_UPDATE_STEPS = 100  # Copy policy -> target network periodically
-
-K_PLANNER = 10  # Every K step usa planner
+WARM_UP_STEPS = 128
+TARGET_UPDATE_STEPS = 50
 
 
 # ===============================
@@ -83,7 +83,7 @@ class DQNAgent:
         self.target_model.load_state_dict(self.model.state_dict())
         self.target_model.eval()
         self.optimizer = optim.Adam(self.model.parameters(), lr=LR)
-        self.loss_fn = nn.MSELoss()
+        self.loss_fn = nn.SmoothL1Loss()
 
         self.memory = deque(maxlen=MEMORY_SIZE)
         self.steps_done = 0
@@ -96,7 +96,32 @@ class DQNAgent:
         vec[state] = 1.0
         return vec
 
-    def planner_action(self, env, state):
+    def select_action(self, env, state):
+        if random.random() < self.epsilon:
+            return self.select_explore_action(env, state)
+
+        return self.select_exploit_action(state)
+
+    def select_explore_action(self, env, state):
+        if self.use_planner:
+            return self.select_planned_action(env, state)
+
+        return random.randrange(self.action_size)
+
+    def select_exploit_action(self, state):
+        state_t = torch.tensor(self.one_hot(state)).unsqueeze(0).to(self.device)
+
+        with torch.no_grad():
+            q_values = self.model(state_t)
+        return torch.argmax(q_values).item()
+
+    def select_planned_action(self, env, state):
+        planned_action = self.get_planned_action(env, state)
+        if planned_action is not None:
+            return planned_action
+        return random.randrange(self.action_size)
+
+    def get_planned_action(self, env, state):
         self.planner_calls += 1
         problem = planner.define_problem(env, state)
         plan = planner.build_plan(problem)
@@ -108,23 +133,6 @@ class DQNAgent:
         self.planner_misses += 1
         return plan
 
-    def select_action(self, env, state):
-        # planner-guided step
-        if self.use_planner and self.steps_done % K_PLANNER == 0:
-            planned_action = self.planner_action(env, state)
-            if planned_action is not None:
-                return planned_action
-
-        # epsilon-greedy
-        if random.random() < self.epsilon:
-            return random.randrange(self.action_size)
-
-        state_t = torch.tensor(self.one_hot(state)).unsqueeze(0).to(self.device)
-
-        with torch.no_grad():
-            q_values = self.model(state_t)
-        return torch.argmax(q_values).item()
-
     def store(self, transition):
         self.memory.append(transition)
 
@@ -133,7 +141,7 @@ class DQNAgent:
         self.epsilon = max(
             self.epsilon_min,
             EPSILON_START - (EPSILON_START - self.epsilon_min) * frac,
-            )
+        )
 
     def train_step(self):
         if len(self.memory) < self.batch_size or self.steps_done < self.warm_up_steps:
@@ -165,6 +173,7 @@ class DQNAgent:
 
         self.optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
         self.optimizer.step()
 
         self.learn_steps += 1
@@ -185,7 +194,7 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     set_seed(rng_seed)
     env_base = env_seed
 
-    env = gym.make(ENV_ID, is_slippery=False)
+    env = gym.make(ENV_ID)
 
     state_size = env.observation_space.n
     action_size = env.action_space.n
@@ -196,7 +205,7 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     print(
         "[train] start | "
         f"device={device} | "
-        f"lr={LR} gamma={GAMMA} k_planner={K_PLANNER} | "
+        f"lr={LR} gamma={GAMMA} | "
         f"batch={BATCH_SIZE} warm_up={WARM_UP_STEPS} target_update={TARGET_UPDATE_STEPS} | "
         f"episodes={episodes}"
     )
@@ -246,16 +255,18 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     tail_final = rewards[-last_n:]
     win_last_n = 100 * _win_rate(tail_final)
 
-    pm = agent.planner_misses
-    pc = agent.planner_calls
-    miss_pct = 100.0 * pm / pc if pc else 0.0
-    print(
+    parts = [
         "[train] summary | "
         f"win_rate_all={100 * wins / episodes:.1f}% | "
         f"win_rate_last{last_n}={win_last_n:.1f}% | "
-        f"mean_reward={sum(rewards) / len(rewards):.3f} | "
-        f"planner_miss={pm}/{pc} ({miss_pct:.1f}%)"
-    )
+        f"mean_reward={sum(rewards) / len(rewards):.3f}",
+    ]
+    if agent.use_planner:
+        pm = agent.planner_misses
+        pc = agent.planner_calls
+        miss_pct = 100.0 * pm / pc if pc else 0.0
+        parts.append(f"planner_miss={pm}/{pc} ({miss_pct:.1f}%)")
+    print(" | ".join(parts))
 
     return agent
 
@@ -267,10 +278,11 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
     set_seed(rng_seed)
     env_base = env_seed
 
-    env = gym.make(ENV_ID, is_slippery=False)
+    env = gym.make(ENV_ID)
     agent.epsilon = 0.0
     agent.steps_done = 0
     agent.planner_calls = 0
+    agent.planner_misses = 0
 
     episode_rewards = []
     for _ in range(episodes):
@@ -294,15 +306,11 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
     last_n = min(50, episodes)
     win_last_n = 100 * _win_rate(episode_rewards[-last_n:])
 
-    pm = agent.planner_misses
-    pc = agent.planner_calls
-    miss_pct = 100.0 * pm / pc if pc else 0.0
     print(
         "[test] summary | "
         f"episodes={episodes} | "
         f"success_rate_all={100 * wins / episodes:.1f}% | "
         f"success_rate_last{last_n}={win_last_n:.1f}% | "
         f"mean_reward={mean_r:.3f} | "
-        f"steps_done={agent.steps_done:.3f} | "
-        f"planner_miss={pm}/{pc} ({miss_pct:.1f}%)"
+        f"steps_done={agent.steps_done}"
     )
