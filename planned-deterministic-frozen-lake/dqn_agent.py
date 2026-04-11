@@ -40,6 +40,8 @@ MEMORY_SIZE = 5000
 BATCH_SIZE = 64
 WARM_UP_STEPS = 128
 TARGET_UPDATE_STEPS = 50
+# For each call to the planner in exploration: how many actions of the plan to execute consecutively
+PLANNED_ACTIONS_FROM_PLAN = 2
 
 
 # ===============================
@@ -76,6 +78,7 @@ class DQNAgent:
         self.target_update_steps = TARGET_UPDATE_STEPS
 
         self.use_planner = use_planner
+        self.planned_actions_from_plan = max(1, int(PLANNED_ACTIONS_FROM_PLAN))
         self.device = device if device is not None else pick_device()
 
         self.model = QNetwork(state_size, action_size).to(self.device)
@@ -90,6 +93,10 @@ class DQNAgent:
         self.learn_steps = 0
         self.planner_calls = 0
         self.planner_misses = 0
+        self._plan_action_queue = deque()
+
+    def flush_pending_plan_actions(self):
+        self._plan_action_queue.clear()
 
     def one_hot(self, state):
         vec = np.zeros(self.state_size, dtype=np.float32)
@@ -97,6 +104,9 @@ class DQNAgent:
         return vec
 
     def select_action(self, env, state):
+        if self._plan_action_queue:
+            return self._plan_action_queue.popleft()
+
         if random.random() < self.epsilon:
             return self.select_explore_action(env, state)
 
@@ -116,22 +126,28 @@ class DQNAgent:
         return torch.argmax(q_values).item()
 
     def select_planned_action(self, env, state):
-        planned_action = self.get_planned_action(env, state)
-        if planned_action is not None:
-            return planned_action
-        return random.randrange(self.action_size)
+        planned_actions = self.get_planned_actions(env, state)
+        if not planned_actions:
+            return random.randrange(self.action_size)
+        if len(planned_actions) > 1:
+            self._plan_action_queue.extend(planned_actions[1:])
+        return planned_actions[0]
 
-    def get_planned_action(self, env, state):
+    def get_planned_actions(self, env, state):
         self.planner_calls += 1
         problem = planner.define_problem(env, state)
         plan = planner.build_plan(problem)
 
-        if plan is not None:
-            # E.g.: "move_0_1_2" → 2
-            return int(plan[0].split("_")[-1])
+        if plan is None or len(plan) == 0:
+            self.planner_misses += 1
+            return None
 
-        self.planner_misses += 1
-        return plan
+        n = min(self.planned_actions_from_plan, len(plan))
+        out = []
+        for i in range(n):
+            # E.g.: "move_0_1_2" → 2
+            out.append(int(plan[i].split("_")[-1]))
+        return out
 
     def store(self, transition):
         self.memory.append(transition)
@@ -214,6 +230,7 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
 
     for ep in range(episodes):
         state, _ = env.reset(seed=env_base)
+        agent.flush_pending_plan_actions()
         done = False
         total_reward = 0
 
@@ -283,10 +300,12 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
     agent.steps_done = 0
     agent.planner_calls = 0
     agent.planner_misses = 0
+    agent.flush_pending_plan_actions()
 
     episode_rewards = []
     for _ in range(episodes):
         state, _ = env.reset(seed=env_base)
+        agent.flush_pending_plan_actions()
         done = False
         total_reward = 0
 
