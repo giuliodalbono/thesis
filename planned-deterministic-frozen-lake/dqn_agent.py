@@ -10,6 +10,7 @@ import torch.nn as nn
 import torch.optim as optim
 import random
 from collections import deque
+from typing import Dict, List, Optional
 
 import planner
 
@@ -93,10 +94,15 @@ class DQNAgent:
         self.learn_steps = 0
         self.planner_calls = 0
         self.planner_misses = 0
+        self.planner_cache_hits = 0
         self._plan_action_queue = deque()
+        self._plan_cache: Dict[int, Optional[List[str]]] = {}
 
     def flush_pending_plan_actions(self):
         self._plan_action_queue.clear()
+
+    def flush_plan_cache(self):
+        self._plan_cache.clear()
 
     def one_hot(self, state):
         vec = np.zeros(self.state_size, dtype=np.float32)
@@ -134,12 +140,18 @@ class DQNAgent:
         return planned_actions[0]
 
     def get_planned_actions(self, env, state):
-        self.planner_calls += 1
-        problem = planner.define_problem(env, state)
-        plan = planner.build_plan(problem)
+        if state in self._plan_cache:
+            self.planner_cache_hits += 1
+            plan = self._plan_cache[state]
+        else:
+            self.planner_calls += 1
+            problem = planner.define_problem(env, state)
+            plan = planner.build_plan(problem)
+            self._plan_cache[state] = plan
+            if plan is None or len(plan) == 0:
+                self.planner_misses += 1
 
         if plan is None or len(plan) == 0:
-            self.planner_misses += 1
             return None
 
         n = min(self.planned_actions_from_plan, len(plan))
@@ -282,7 +294,10 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
         pm = agent.planner_misses
         pc = agent.planner_calls
         miss_pct = 100.0 * pm / pc if pc else 0.0
-        parts.append(f"planner_miss={pm}/{pc} ({miss_pct:.1f}%)")
+        parts.append(
+            f"planner_solves={pc} cache_hits={agent.planner_cache_hits} "
+            f"miss={pm}/{pc} ({miss_pct:.1f}%)"
+        )
     print(" | ".join(parts))
 
     return agent
@@ -300,6 +315,7 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
     agent.steps_done = 0
     agent.planner_calls = 0
     agent.planner_misses = 0
+    agent.planner_cache_hits = 0
     agent.flush_pending_plan_actions()
 
     episode_rewards = []
