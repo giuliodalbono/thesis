@@ -11,6 +11,7 @@ import torch.optim as optim
 import random
 from collections import deque
 from typing import Deque, Dict, List, Optional, Tuple
+from gymnasium.envs.toy_text.frozen_lake import generate_random_map
 
 import planner
 
@@ -31,14 +32,14 @@ def set_seed(seed: int) -> None:
 
 ENV_ID = "FrozenLake-v1"
 GAMMA = 0.99
-LR = 1e-3
+LR = 5e-4
 EPSILON_START = 1.0
 EPSILON_MIN = 0.05
-EPSILON_DECAY_STEPS = 5000
-MEMORY_SIZE = 5000
+EPSILON_DECAY_STEPS = 30000
+MEMORY_SIZE = 20000
 BATCH_SIZE = 64
-WARM_UP_STEPS = 128
-TARGET_UPDATE_STEPS = 50
+WARM_UP_STEPS = 1000
+TARGET_UPDATE_STEPS = 300
 # For each call to the planner in exploration: how many actions of the plan to execute consecutively
 PLANNED_ACTIONS_FROM_PLAN = 1
 
@@ -49,11 +50,14 @@ PLANNED_ACTIONS_FROM_PLAN = 1
 class QNetwork(nn.Module):
     def __init__(self, state_size, action_size):
         super().__init__()
-        hidden = 64
+        hidden1 = 128
+        hidden2 = 64
         self.net = nn.Sequential(
-            nn.Linear(state_size, hidden),
+            nn.Linear(state_size, hidden1),
             nn.ReLU(),
-            nn.Linear(hidden, action_size),
+            nn.Linear(hidden1, hidden2),
+            nn.ReLU(),
+            nn.Linear(hidden2, action_size)
         )
 
     def forward(self, x):
@@ -230,7 +234,7 @@ class DQNAgent:
 
         self.optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=10.0)
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)
         self.optimizer.step()
 
         self.learn_steps += 1
@@ -251,7 +255,8 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     set_seed(rng_seed)
     env_base = env_seed
 
-    env = gym.make(ENV_ID)
+    desc = generate_random_map(size=6, p=0.8, seed=rng_seed)
+    env = gym.make(id=ENV_ID, desc=desc, is_slippery=False)
 
     state_size = env.observation_space.n
     action_size = env.action_space.n
@@ -271,7 +276,7 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     rewards = []
 
     for ep in range(episodes):
-        state, _ = env.reset(seed=env_base)
+        state, _ = env.reset(seed=env_base + ep)
         agent.flush_pending_plan_actions()
         done = False
         total_reward = 0
@@ -280,11 +285,20 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
             action = agent.select_action(env, state)
 
             next_state, reward, terminated, truncated, _ = env.step(action)
+
+            if terminated:
+                if reward > 0:
+                    shaped_reward = 10.0
+                else:
+                    shaped_reward = -1.0
+            else:
+                shaped_reward = 0.0
+
             done = terminated or truncated
 
             agent.validate_planned_transition(next_state)
 
-            agent.store((state, action, reward, next_state, done))
+            agent.store((state, action, shaped_reward, next_state, done))
 
             agent.steps_done += 1
             agent.update_epsilon()
@@ -343,7 +357,9 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
     set_seed(rng_seed)
     env_base = env_seed
 
-    env = gym.make(ENV_ID)
+    desc = generate_random_map(size=6, p=0.8, seed=rng_seed)
+    env = gym.make(id=ENV_ID, desc=desc, is_slippery=False)
+
     agent.epsilon = 0.0
     agent.steps_done = 0
     agent.planner_calls = 0
@@ -352,8 +368,8 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
     agent.flush_pending_plan_actions()
 
     episode_rewards = []
-    for _ in range(episodes):
-        state, _ = env.reset(seed=env_base)
+    for ep in range(episodes):
+        state, _ = env.reset(seed=env_base + ep)
         agent.flush_pending_plan_actions()
         done = False
         total_reward = 0
