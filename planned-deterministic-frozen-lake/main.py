@@ -5,7 +5,7 @@ from plot_utility import plot_test_distribution, plot_training_curve
 # --- Run Configuration ---
 RNG_SEED = 42
 ENV_SEED = None  # if None, uses RNG_SEED for Gymnasium env.reset base
-TRAIN_EPISODES = 500
+TRAIN_EPISODES = 5000
 TEST_EPISODES = 100
 
 

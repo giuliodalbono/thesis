@@ -35,11 +35,11 @@ GAMMA = 0.99
 LR = 1e-3
 EPSILON_START = 1.0
 EPSILON_MIN = 0.05
-EPSILON_DECAY_STEPS = 5000
-MEMORY_SIZE = 5000
-BATCH_SIZE = 64
-WARM_UP_STEPS = 128
-TARGET_UPDATE_STEPS = 50
+EPSILON_DECAY_STEPS = 50000
+MEMORY_SIZE = 50000
+BATCH_SIZE = 128
+WARM_UP_STEPS = 512
+TARGET_UPDATE_STEPS = 100
 
 
 # ===============================
@@ -92,8 +92,6 @@ class DQNAgent:
         self.planner_misses = 0
         self.planner_cache_hits = 0
         self._plan_cache: Dict[int, Optional[List[str]]] = {}
-        self._await_planned_outcome = False
-        self._expected_next_state_after_planned_action = -1
 
     def one_hot(self, state):
         vec = np.zeros(self.state_size, dtype=np.float32)
@@ -104,14 +102,12 @@ class DQNAgent:
         if random.random() < self.epsilon:
             return self.select_explore_action(env, state)
 
-        self._clear_planned_step_expectation()
         return self.select_exploit_action(state)
 
     def select_explore_action(self, env, state):
         if self.use_planner:
             return self.select_planned_action(env, state)
 
-        self._clear_planned_step_expectation()
         return random.randrange(self.action_size)
 
     def select_exploit_action(self, state):
@@ -124,28 +120,8 @@ class DQNAgent:
     def select_planned_action(self, env, state):
         planned_action = self.get_planned_action(env, state)
         if planned_action is None:
-            self._clear_planned_step_expectation()
             return random.randrange(self.action_size)
-        action, expected_next = planned_action
-        self._set_planned_step_expectation(expected_next)
-        return action
-
-    def _set_planned_step_expectation(self, expected_next_state: int) -> None:
-        self._await_planned_outcome = True
-        self._expected_next_state_after_planned_action = expected_next_state
-
-    def _clear_planned_step_expectation(self) -> None:
-        self._await_planned_outcome = False
-        self._expected_next_state_after_planned_action = -1
-
-    def validate_planned_transition(self, next_state: int) -> None:
-        if not self.use_planner or not self._await_planned_outcome:
-            self._clear_planned_step_expectation()
-            return
-        if next_state != self._expected_next_state_after_planned_action:
-            self._clear_planned_step_expectation()
-        else:
-            self._clear_planned_step_expectation()
+        return planned_action
 
     def get_planned_action(self, env, state):
         if state in self._plan_cache:
@@ -162,11 +138,9 @@ class DQNAgent:
         if plan is None or len(plan) == 0:
             return None
 
-        # "move_{s}_{next_state}_{a}" -> (gym_action, expected_next_state)
+        # "move_{s}_{next_state}_{a}" -> gym_action
         parts = plan[0].split("_")
-        gym_action = int(parts[-1])
-        expected_next = int(parts[-2])
-        return gym_action, expected_next
+        return int(parts[-1])
 
     def store(self, transition):
         self.memory.append(transition)
@@ -225,6 +199,10 @@ def _win_rate(reward_list):
     return sum(1 for r in reward_list if r > 0) / len(reward_list)
 
 
+def _evaluation_episode_seed(base_seed, episode_idx):
+    return None if base_seed is None else base_seed + episode_idx
+
+
 def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     set_seed(rng_seed)
     env_base = env_seed
@@ -248,8 +226,10 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     rewards = []
 
     for ep in range(episodes):
-        state, _ = env.reset(seed=env_base)
-        agent._clear_planned_step_expectation()
+        # Seed only the first reset so the run is reproducible without replaying
+        # the same slippery outcomes at the start of every episode.
+        episode_seed = env_base if ep == 0 else None
+        state, _ = env.reset(seed=episode_seed)
         done = False
         total_reward = 0
 
@@ -258,8 +238,6 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
 
             next_state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
-
-            agent.validate_planned_transition(next_state)
 
             agent.store((state, action, reward, next_state, done))
 
@@ -326,12 +304,12 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
     agent.planner_calls = 0
     agent.planner_misses = 0
     agent.planner_cache_hits = 0
-    agent._clear_planned_step_expectation()
 
     episode_rewards = []
-    for _ in range(episodes):
-        state, _ = env.reset(seed=env_base)
-        agent._clear_planned_step_expectation()
+    for ep in range(episodes):
+        # Reuse the same deterministic seed schedule across agents so evaluation
+        # stays fair while still covering different stochastic episodes.
+        state, _ = env.reset(seed=_evaluation_episode_seed(env_base, ep))
         done = False
         total_reward = 0
 
@@ -339,7 +317,6 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
             action = agent.select_action(env, state)
             state, reward, terminated, truncated, _ = env.step(action)
             done = terminated or truncated
-            agent.validate_planned_transition(state)
             total_reward += reward
             agent.steps_done += 1
 
