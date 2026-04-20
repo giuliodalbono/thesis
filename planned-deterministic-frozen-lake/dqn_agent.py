@@ -3,14 +3,15 @@
 # ===============================
 
 
+import random
+from collections import deque
+from typing import Dict, List, Optional
+
 import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import random
-from collections import deque
-from typing import Deque, Dict, List, Optional, Tuple
 
 import planner
 
@@ -39,8 +40,6 @@ MEMORY_SIZE = 5000
 BATCH_SIZE = 64
 WARM_UP_STEPS = 128
 TARGET_UPDATE_STEPS = 50
-# For each call to the planner in exploration: how many actions of the plan to execute consecutively
-PLANNED_ACTIONS_FROM_PLAN = 1
 
 
 # ===============================
@@ -77,7 +76,6 @@ class DQNAgent:
         self.target_update_steps = TARGET_UPDATE_STEPS
 
         self.use_planner = use_planner
-        self.planned_actions_from_plan = max(1, int(PLANNED_ACTIONS_FROM_PLAN))
         self.device = device if device is not None else pick_device()
 
         self.model = QNetwork(state_size, action_size).to(self.device)
@@ -93,18 +91,9 @@ class DQNAgent:
         self.planner_calls = 0
         self.planner_misses = 0
         self.planner_cache_hits = 0
-        self._plan_action_queue: Deque[Tuple[int, int]] = deque()
         self._plan_cache: Dict[int, Optional[List[str]]] = {}
         self._await_planned_outcome = False
         self._expected_next_state_after_planned_action = -1
-
-    def flush_pending_plan_actions(self):
-        self._plan_action_queue.clear()
-        self._await_planned_outcome = False
-        self._expected_next_state_after_planned_action = -1
-
-    def flush_plan_cache(self):
-        self._plan_cache.clear()
 
     def one_hot(self, state):
         vec = np.zeros(self.state_size, dtype=np.float32)
@@ -112,11 +101,6 @@ class DQNAgent:
         return vec
 
     def select_action(self, env, state):
-        if self._plan_action_queue:
-            action, expected_next = self._plan_action_queue.popleft()
-            self._set_planned_step_expectation(expected_next)
-            return action
-
         if random.random() < self.epsilon:
             return self.select_explore_action(env, state)
 
@@ -138,15 +122,13 @@ class DQNAgent:
         return torch.argmax(q_values).item()
 
     def select_planned_action(self, env, state):
-        planned_actions = self.get_planned_actions(env, state)
-        if not planned_actions:
+        planned_action = self.get_planned_action(env, state)
+        if planned_action is None:
             self._clear_planned_step_expectation()
             return random.randrange(self.action_size)
-        first_action, first_expected_next = planned_actions[0]
-        self._set_planned_step_expectation(first_expected_next)
-        if len(planned_actions) > 1:
-            self._plan_action_queue.extend(planned_actions[1:])
-        return first_action
+        action, expected_next = planned_action
+        self._set_planned_step_expectation(expected_next)
+        return action
 
     def _set_planned_step_expectation(self, expected_next_state: int) -> None:
         self._await_planned_outcome = True
@@ -161,11 +143,11 @@ class DQNAgent:
             self._clear_planned_step_expectation()
             return
         if next_state != self._expected_next_state_after_planned_action:
-            self.flush_pending_plan_actions()
+            self._clear_planned_step_expectation()
         else:
             self._clear_planned_step_expectation()
 
-    def get_planned_actions(self, env, state):
+    def get_planned_action(self, env, state):
         if state in self._plan_cache:
             self.planner_cache_hits += 1
             plan = self._plan_cache[state]
@@ -180,15 +162,11 @@ class DQNAgent:
         if plan is None or len(plan) == 0:
             return None
 
-        n = min(self.planned_actions_from_plan, len(plan))
-        out: List[Tuple[int, int]] = []
-        for i in range(n):
-            # "move_{s}_{next_state}_{a}" → (gym_action, expected_next_state)
-            parts = plan[i].split("_")
-            gym_action = int(parts[-1])
-            expected_next = int(parts[-2])
-            out.append((gym_action, expected_next))
-        return out
+        # "move_{s}_{next_state}_{a}" -> (gym_action, expected_next_state)
+        parts = plan[0].split("_")
+        gym_action = int(parts[-1])
+        expected_next = int(parts[-2])
+        return gym_action, expected_next
 
     def store(self, transition):
         self.memory.append(transition)
@@ -251,7 +229,7 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     set_seed(rng_seed)
     env_base = env_seed
 
-    env = gym.make(ENV_ID)
+    env = gym.make(ENV_ID, is_slippery=True)
 
     state_size = env.observation_space.n
     action_size = env.action_space.n
@@ -263,7 +241,6 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
         "[train] start | "
         f"device={device} | "
         f"lr={LR} gamma={GAMMA} | "
-        f"plan_horizon={agent.planned_actions_from_plan} | "
         f"batch={BATCH_SIZE} warm_up={WARM_UP_STEPS} target_update={TARGET_UPDATE_STEPS} | "
         f"episodes={episodes}"
     )
@@ -272,7 +249,7 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
 
     for ep in range(episodes):
         state, _ = env.reset(seed=env_base)
-        agent.flush_pending_plan_actions()
+        agent._clear_planned_step_expectation()
         done = False
         total_reward = 0
 
@@ -343,18 +320,18 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
     set_seed(rng_seed)
     env_base = env_seed
 
-    env = gym.make(ENV_ID)
+    env = gym.make(ENV_ID, is_slippery=True)
     agent.epsilon = 0.0
     agent.steps_done = 0
     agent.planner_calls = 0
     agent.planner_misses = 0
     agent.planner_cache_hits = 0
-    agent.flush_pending_plan_actions()
+    agent._clear_planned_step_expectation()
 
     episode_rewards = []
     for _ in range(episodes):
         state, _ = env.reset(seed=env_base)
-        agent.flush_pending_plan_actions()
+        agent._clear_planned_step_expectation()
         done = False
         total_reward = 0
 
