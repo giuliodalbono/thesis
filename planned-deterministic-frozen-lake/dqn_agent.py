@@ -138,7 +138,7 @@ class DQNAgent:
         if plan is None or len(plan) == 0:
             return None
 
-        # "move_{s}_{next_state}_{a}" -> gym_action
+        # "move_{s}_{a}" -> gym_action
         parts = plan[0].split("_")
         return int(parts[-1])
 

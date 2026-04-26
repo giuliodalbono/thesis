@@ -5,6 +5,43 @@ from unified_planning.environment import get_environment
 get_environment().credits_stream = None
 
 
+def most_likely_transition(outcomes):
+    transition_scores = {}
+
+    for prob, next_state, reward, done in outcomes:
+        if prob == 0:
+            continue
+
+        if next_state not in transition_scores:
+            transition_scores[next_state] = {
+                "prob": 0.0,
+                "reward": reward,
+                "done": done,
+            }
+
+        transition_scores[next_state]["prob"] += prob
+        transition_scores[next_state]["reward"] = max(
+            transition_scores[next_state]["reward"], reward
+        )
+        transition_scores[next_state]["done"] = (
+            transition_scores[next_state]["done"] and done
+        )
+
+    if not transition_scores:
+        return None
+
+    best_next_state, best_data = max(
+        transition_scores.items(),
+        key=lambda item: (
+            item[1]["prob"],
+            item[1]["reward"],
+            0 if item[1]["done"] else 1,
+            item[0],
+        ),
+    )
+    return best_next_state, best_data
+
+
 def define_problem(env, current_state):
     problem = Problem("FrozenLake-v1")
 
@@ -32,35 +69,26 @@ def define_problem(env, current_state):
     # Valid transitions from environment
     # transitions[s][a] contains  all possible tuples (prob, next_state, reward, done) for the state s and action a
     transitions = env.unwrapped.P
-    # With slippery environment, there can happen there is more than one (s, next, a), UP wants unique action names,
-    # so we use a set for avoiding duplication
-    action_names: set[str] = set()
-
     # For all states
     for s in range(n_states):
         # For all actions possible
         for a in range(4):
-            for outcome in transitions[s][a]:
-                prob, next_state, reward, done = outcome
+            best_transition = most_likely_transition(transitions[s][a])
+            if best_transition is None:
+                continue
 
-                if prob == 0:
-                    continue
+            next_state, _ = best_transition
+            action_name = f"move_{s}_{a}"
+            action = InstantaneousAction(action_name)
 
-                action_name = f"move_{s}_{next_state}_{a}"
-                if action_name in action_names:
-                    continue
-                action_names.add(action_name)
+            from_l = locations[s]
+            to_l = locations[next_state]
 
-                action = InstantaneousAction(action_name)
+            action.add_precondition(at(from_l))
+            action.add_effect(at(from_l), False)
+            action.add_effect(at(to_l), True)
 
-                from_l = locations[s]
-                to_l = locations[next_state]
-
-                action.add_precondition(at(from_l))
-                action.add_effect(at(from_l), False)
-                action.add_effect(at(to_l), True)
-
-                problem.add_action(action)
+            problem.add_action(action)
 
     return problem
 
