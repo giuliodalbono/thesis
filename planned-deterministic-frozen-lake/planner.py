@@ -5,47 +5,53 @@ from unified_planning.environment import get_environment
 get_environment().credits_stream = None
 
 
-def most_likely_transition(outcomes):
-    transition_scores = {}
+def most_likely_transition(outcomes, nominal_preferred=None):
+    state_probabilities = {}
 
-    for prob, next_state, reward, done in outcomes:
+    for prob, next_state, _, _ in outcomes:
         if prob == 0:
             continue
 
-        if next_state not in transition_scores:
-            transition_scores[next_state] = {
-                "prob": 0.0,
-                "reward": reward,
-                "done": done,
-            }
+        if next_state not in state_probabilities:
+            state_probabilities[next_state] = 0.0
+        state_probabilities[next_state] += prob
 
-        transition_scores[next_state]["prob"] += prob
-        transition_scores[next_state]["reward"] = max(
-            transition_scores[next_state]["reward"], reward
-        )
-        transition_scores[next_state]["done"] = (
-            transition_scores[next_state]["done"] and done
-        )
-
-    if not transition_scores:
+    if not state_probabilities:
         return None
 
-    best_next_state, best_data = max(
-        transition_scores.items(),
-        key=lambda item: (
-            item[1]["prob"],
-            item[1]["reward"],
-            0 if item[1]["done"] else 1,
-            item[0],
-        ),
-    )
-    return best_next_state, best_data
+    max_prob = max(state_probabilities.values())
+    best_states = {s for s, p in state_probabilities.items() if p == max_prob}
+
+    if nominal_preferred in best_states:
+        return nominal_preferred
+
+    # Deterministic fallback to keep planner behavior stable.
+    return min(best_states)
+
+
+def _nominal_next_state(s: int, a: int, nrow: int, ncol: int) -> int:
+    # Deterministic nominal movement: LEFT, DOWN, RIGHT, UP.
+    row = s // ncol
+    col = s % ncol
+
+    if a == 0:  # LEFT
+        col = max(0, col - 1)
+    elif a == 1:  # DOWN
+        row = min(nrow - 1, row + 1)
+    elif a == 2:  # RIGHT
+        col = min(ncol - 1, col + 1)
+    elif a == 3:  # UP
+        row = max(0, row - 1)
+
+    return row * ncol + col
 
 
 def define_problem(env, current_state):
     problem = Problem("FrozenLake-v1")
 
     n_states = env.observation_space.n
+    n_row = int(env.unwrapped.nrow)
+    n_col = int(env.unwrapped.ncol)
 
     # Type (represents the cell of the gridmap)
     Location: Type = UserType("Location")
@@ -73,11 +79,15 @@ def define_problem(env, current_state):
     for s in range(n_states):
         # For all actions possible
         for a in range(4):
-            best_transition = most_likely_transition(transitions[s][a])
+            nominal = _nominal_next_state(s, a, n_row, n_col)
+            best_transition = most_likely_transition(
+                transitions[s][a],
+                nominal_preferred=nominal,
+            )
             if best_transition is None:
                 continue
 
-            next_state, _ = best_transition
+            next_state = best_transition
             action_name = f"move_{s}_{a}"
             action = InstantaneousAction(action_name)
 
