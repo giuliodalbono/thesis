@@ -5,10 +5,30 @@ from unified_planning.environment import get_environment
 get_environment().credits_stream = None
 
 
+def _nominal_next_state(s: int, a: int, nrow: int, ncol: int) -> int:
+    # Deterministic nominal movement: LEFT, DOWN, RIGHT, UP.
+    row = s // ncol
+    col = s % ncol
+
+    if a == 0:  # LEFT
+        col = max(0, col - 1)
+    elif a == 1:  # DOWN
+        row = min(nrow - 1, row + 1)
+    elif a == 2:  # RIGHT
+        col = min(ncol - 1, col + 1)
+    elif a == 3:  # UP
+        row = max(0, row - 1)
+
+    return row * ncol + col
+
+
 def define_problem(env, current_state):
     problem = Problem("FrozenLake-v1")
 
     n_states = env.observation_space.n
+    n_row = int(env.unwrapped.nrow)
+    n_col = int(env.unwrapped.ncol)
+    desc = env.unwrapped.desc
 
     # Type (represents the cell of the gridmap)
     Location: Type = UserType("Location")
@@ -29,38 +49,44 @@ def define_problem(env, current_state):
     goal_state = n_states - 1
     problem.add_goal(at(locations[goal_state]))
 
-    # Valid transitions from environment
-    # transitions[s][a] contains  all possible tuples (prob, next_state, reward, done) for the state s and action a
-    transitions = env.unwrapped.P
-    # With slippery environment, there can happen there is more than one (s, next, a), UP wants unique action names,
-    # so we use a set for avoiding duplication
-    action_names: set[str] = set()
-
-    # For all states
+    # Deterministic nominal transitions for planning.
     for s in range(n_states):
+        s_row = s // n_col
+        s_col = s % n_col
+        s_tile = desc[s_row][s_col]
+        s_symbol = s_tile.decode("utf-8") if isinstance(s_tile, bytes) else str(s_tile)
+
+        # No outgoing moves from terminal cells in the planner model.
+        if s_symbol in {"H", "G"}:
+            continue
+
         # For all actions possible
         for a in range(4):
-            for outcome in transitions[s][a]:
-                prob, next_state, reward, done = outcome
+            next_state = _nominal_next_state(s, a, n_row, n_col)
+            n_row = next_state // n_col
+            n_col = next_state % n_col
+            next_tile = desc[n_row][n_col]
+            next_symbol = (
+                next_tile.decode("utf-8")
+                if isinstance(next_tile, bytes)
+                else str(next_tile)
+            )
 
-                if prob == 0:
-                    continue
+            # Do not generate actions that step into holes.
+            if next_symbol == "H":
+                continue
 
-                action_name = f"move_{s}_{next_state}_{a}"
-                if action_name in action_names:
-                    continue
-                action_names.add(action_name)
+            action_name = f"move_{s}_{next_state}_{a}"
+            action = InstantaneousAction(action_name)
 
-                action = InstantaneousAction(action_name)
+            from_l = locations[s]
+            to_l = locations[next_state]
 
-                from_l = locations[s]
-                to_l = locations[next_state]
+            action.add_precondition(at(from_l))
+            action.add_effect(at(from_l), False)
+            action.add_effect(at(to_l), True)
 
-                action.add_precondition(at(from_l))
-                action.add_effect(at(from_l), False)
-                action.add_effect(at(to_l), True)
-
-                problem.add_action(action)
+            problem.add_action(action)
 
     return problem
 

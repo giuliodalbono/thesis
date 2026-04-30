@@ -16,6 +16,23 @@ import torch.optim as optim
 import planner
 
 
+def format_frozen_lake_state(env, state: int) -> str:
+    """Return an ASCII map with A=agent, S/F/H/G as tile types."""
+    desc = env.unwrapped.desc
+    ncols = int(env.unwrapped.ncol)
+    rows = []
+
+    for r, row in enumerate(desc):
+        rendered_row = []
+        for c, cell in enumerate(row):
+            idx = r * ncols + c
+            symbol = cell.decode("utf-8") if isinstance(cell, bytes) else str(cell)
+            rendered_row.append("A" if idx == state else symbol)
+        rows.append(" ".join(rendered_row))
+
+    return "\n".join(rows)
+
+
 def pick_device() -> torch.device:
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
         return torch.device("mps")
@@ -131,6 +148,9 @@ class DQNAgent:
             self.planner_calls += 1
             problem = planner.define_problem(env, state)
             plan = planner.build_plan(problem)
+            print("current map:")
+            print(format_frozen_lake_state(env, state))
+            print("plan: " + str(plan))
             self._plan_cache[state] = plan
             if plan is None or len(plan) == 0:
                 self.planner_misses += 1
