@@ -63,18 +63,6 @@ def define_problem(env, current_state):
         # For all actions possible
         for a in range(4):
             next_state = _nominal_next_state(s, a, n_row, n_col)
-            n_row = next_state // n_col
-            n_col = next_state % n_col
-            next_tile = desc[n_row][n_col]
-            next_symbol = (
-                next_tile.decode("utf-8")
-                if isinstance(next_tile, bytes)
-                else str(next_tile)
-            )
-
-            # Do not generate actions that step into holes.
-            if next_symbol == "H":
-                continue
 
             action_name = f"move_{s}_{next_state}_{a}"
             action = InstantaneousAction(action_name)

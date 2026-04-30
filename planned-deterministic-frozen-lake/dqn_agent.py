@@ -14,6 +14,7 @@ import torch.nn as nn
 import torch.optim as optim
 
 import planner
+from slippery_probability_wrapper import SlipperyProbabilityWrapper
 
 
 def format_frozen_lake_state(env, state: int) -> str:
@@ -227,7 +228,8 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     set_seed(rng_seed)
     env_base = env_seed
 
-    env = gym.make(ENV_ID, is_slippery=True)
+    base_env = gym.make(ENV_ID, is_slippery=True)
+    env = SlipperyProbabilityWrapper(base_env, p_nominal=0.8, p_slip=0.1)
 
     state_size = env.observation_space.n
     action_size = env.action_space.n
