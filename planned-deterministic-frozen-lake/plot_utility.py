@@ -39,43 +39,91 @@ def _save_figure(fig, title, fallback):
     fig.savefig(path, dpi=150)
 
 
-def plot_training_curve(rewards, title="", epsilon_floor_episode=None):
+def plot_training_curve(
+    rewards,
+    title="",
+    epsilon_floor_episode=None,
+    epsilon_per_episode=None,
+    epsilon_2_per_episode=None,
+):
     """
     Raw episode rewards + trailing mean (adaptive window ~2% of length).
     Optional vertical line at episode where epsilon hits minimum (exploration floor).
+    Optional epsilon (and epsilon_2 when using planner exploration) on a right-hand axis.
     """
     rewards = np.asarray(rewards)
     window = int(
         np.clip(len(rewards) // TRAIN_WINDOW_DIVISOR, TRAIN_WINDOW_MIN, TRAIN_WINDOW_MAX)
     )
-    plt.figure(figsize=(10, 5))
-    plt.plot(rewards, alpha=0.3, label="Raw")
+    fig, ax_reward = plt.subplots(figsize=(10, 5))
+    episodes = np.arange(len(rewards))
+
+    ax_reward.plot(episodes, rewards, alpha=0.3, label="Raw", color="C0")
 
     smoothed = np.array(
         [np.mean(rewards[max(0, i - window + 1): i + 1]) for i in range(len(rewards))]
     )
-    plt.plot(smoothed, label=f"Mean (w={window})", linewidth=2)
+    ax_reward.plot(episodes, smoothed, label=f"Mean (w={window})", linewidth=2, color="C0")
 
-    plt.title(title)
-    plt.xlabel("Episodes")
-    plt.ylabel("Reward")
+    ax_reward.set_title(title)
+    ax_reward.set_xlabel("Episodes")
+    ax_reward.set_ylabel("Reward")
+
+    legend_handles = []
+    legend_labels = []
+
+    if epsilon_per_episode is not None:
+        eps = np.asarray(epsilon_per_episode, dtype=float)
+        if len(eps) == len(rewards):
+            ax_eps = ax_reward.twinx()
+            (ln_eps,) = ax_eps.plot(
+                episodes, eps, color="tab:orange", linewidth=1.5, alpha=0.9, label="ε"
+            )
+            ax_eps.set_ylabel("Epsilon")
+            ax_eps.set_ylim(0.0, 1.05)
+            ax_eps.tick_params(axis="y")
+            legend_handles.append(ln_eps)
+            legend_labels.append("ε")
+
+            if epsilon_2_per_episode is not None:
+                eps2 = np.asarray(epsilon_2_per_episode, dtype=float)
+                if len(eps2) == len(rewards):
+                    (ln_eps2,) = ax_eps.plot(
+                        episodes,
+                        eps2,
+                        color="tab:green",
+                        linewidth=1.5,
+                        alpha=0.85,
+                        linestyle="--",
+                        label="ε₂ (planner mix)",
+                    )
+                    legend_handles.append(ln_eps2)
+                    legend_labels.append("ε₂ (planner mix)")
 
     if epsilon_floor_episode is not None:
-        plt.axvline(
+        ln_floor = ax_reward.axvline(
             epsilon_floor_episode,
             color="purple",
             linestyle=":",
             linewidth=1,
             label="Epsilon floor",
         )
-    plt.legend()
-    plt.tight_layout()
+        legend_handles.append(ln_floor)
+        legend_labels.append("Epsilon floor")
 
-    _save_current_plot(title, "Training Curve")
+    h_r, lab_r = ax_reward.get_legend_handles_labels()
+    if legend_handles:
+        ax_reward.legend(h_r + legend_handles, lab_r + legend_labels, loc="upper left")
+    else:
+        ax_reward.legend(h_r, lab_r, loc="best")
+
+    fig.tight_layout()
+
+    _save_figure(fig, title, "Training Curve")
     if PLOT_SHOW:
         plt.show()
 
-    plt.close()
+    plt.close(fig)
 
 
 def plot_test_distribution(results, title=""):

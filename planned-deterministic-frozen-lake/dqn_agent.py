@@ -54,6 +54,9 @@ LR = 1e-3
 EPSILON_START = 1.0
 EPSILON_MIN = 0.05
 EPSILON_DECAY_STEPS = 50000
+EPSILON_2_START = 1.0
+EPSILON_2_MIN = 0.25
+EPSILON_2_DECAY_STEPS = 50000
 MEMORY_SIZE = 50000
 BATCH_SIZE = 128
 WARM_UP_STEPS = 512
@@ -89,6 +92,9 @@ class DQNAgent:
         self.epsilon = EPSILON_START
         self.epsilon_min = EPSILON_MIN
         self.epsilon_decay_steps = EPSILON_DECAY_STEPS
+        self.epsilon_2 = EPSILON_2_START
+        self.epsilon_2_min = EPSILON_2_MIN
+        self.epsilon_2_decay_steps = EPSILON_2_DECAY_STEPS
         self.batch_size = BATCH_SIZE
         self.warm_up_steps = WARM_UP_STEPS
         self.target_update_steps = TARGET_UPDATE_STEPS
@@ -124,7 +130,8 @@ class DQNAgent:
 
     def select_explore_action(self, env, state):
         if self.use_planner:
-            return self.select_planned_action(env, state)
+            if random.random() < self.epsilon_2:
+                return self.select_planned_action(env, state)
 
         return random.randrange(self.action_size)
 
@@ -172,6 +179,12 @@ class DQNAgent:
             self.epsilon_min,
             EPSILON_START - (EPSILON_START - self.epsilon_min) * frac,
         )
+
+        frac = min(1.0, self.steps_done / self.epsilon_2_decay_steps)
+        self.epsilon_2 = max(
+            self.epsilon_2_min,
+            EPSILON_2_START - (EPSILON_2_START - self.epsilon_2_min) * frac,
+            )
 
     def train_step(self):
         if len(self.memory) < self.batch_size or self.steps_done < self.warm_up_steps:
@@ -246,6 +259,8 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     )
 
     rewards = []
+    epsilon_per_episode: List[float] = []
+    epsilon_2_per_episode: List[float] = []
 
     for ep in range(episodes):
         # Seed only the first reset so the run is reproducible without replaying
@@ -271,6 +286,8 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
             total_reward += reward
 
         rewards.append(total_reward)
+        epsilon_per_episode.append(agent.epsilon)
+        epsilon_2_per_episode.append(agent.epsilon_2)
 
         if ep % log_every == 0 or ep == episodes - 1:
             tail = rewards[-50:]
@@ -282,6 +299,7 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
                 f"mean{len(tail)}={sum(tail) / len(tail):.3f} | "
                 f"win_last{len(tail)}={win_tail:.0f}% | "
                 f"epsilon={agent.epsilon:.3f} | "
+                f"epsilon_2={agent.epsilon_2:.3f} | "
                 f"steps={agent.steps_done} | "
                 f"learn={agent.learn_steps}"
             )
@@ -310,6 +328,8 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     print(" | ".join(parts))
 
     agent.training_rewards = rewards
+    agent.training_epsilon = epsilon_per_episode
+    agent.training_epsilon_2 = epsilon_2_per_episode
     return agent
 
 
@@ -322,6 +342,7 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
 
     env = gym.make(ENV_ID, is_slippery=True)
     agent.epsilon = 0.0
+    agent.epsilon_2 = 0.0
     agent.steps_done = 0
     agent.planner_calls = 0
     agent.planner_misses = 0

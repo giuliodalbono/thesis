@@ -17,7 +17,12 @@ def main():
     print("--- Training ---")
 
     dqn_agent = train_dqn(episodes=TRAIN_EPISODES, use_planner=True, rng_seed=RNG_SEED, env_seed=env_seed)
-    plot_training_curve(dqn_agent.training_rewards, title="FrozenLake Training Curve - DQN + classical planner")
+    plot_training_curve(
+        dqn_agent.training_rewards,
+        title="FrozenLake Training Curve - DQN + classical planner",
+        epsilon_per_episode=dqn_agent.training_epsilon,
+        epsilon_2_per_episode=dqn_agent.training_epsilon_2,
+    )
 
     print("--- Evaluation ---")
 
@@ -29,7 +34,11 @@ def main():
     print("--- Training ---")
 
     dqn_agent = train_dqn(episodes=TRAIN_EPISODES, use_planner=False, rng_seed=RNG_SEED, env_seed=env_seed)
-    plot_training_curve(dqn_agent.training_rewards, title="FrozenLake Training Curve - DQN with NO classical planner")
+    plot_training_curve(
+        dqn_agent.training_rewards,
+        title="FrozenLake Training Curve - DQN with NO classical planner",
+        epsilon_per_episode=dqn_agent.training_epsilon,
+    )
 
     print("--- Evaluation ---")
 
