@@ -39,87 +39,165 @@ def _save_figure(fig, title, fallback):
     fig.savefig(path, dpi=150)
 
 
-def plot_training_curve(
-    rewards,
-    title="",
-    epsilon_floor_episode=None,
-    epsilon_per_episode=None,
-    epsilon_2_per_episode=None,
-):
-    """
-    Raw episode rewards + trailing mean (adaptive window ~2% of length).
-    Optional vertical line at episode where epsilon hits minimum (exploration floor).
-    Optional epsilon (and epsilon_2 when using planner exploration) on a right-hand axis.
-    """
+def _format_duration(seconds):
+    if seconds < 60:
+        return f"{seconds:.2f} s"
+    if seconds < 3600:
+        minutes, secs = divmod(seconds, 60)
+        return f"{int(minutes)} min {secs:.1f} s"
+    hours, rem = divmod(seconds, 3600)
+    minutes, secs = divmod(rem, 60)
+    return f"{int(hours)} h {int(minutes)} min {secs:.0f} s"
+
+
+def _training_stats_text(stats, include_planner_timing=False):
+    lines = [
+        f"Episodi: {stats['episodes']}",
+        f"Tempo training: {_format_duration(stats['training_time_s'])}",
+    ]
+    if include_planner_timing:
+        lines.append(
+            f"Tempo pianificazione: {_format_duration(stats['plan_time_s'])}"
+        )
+        lines.append(f"% su training: {stats['plan_time_pct']:.2f}%")
+    return "\n".join(lines)
+
+
+def _smoothed_rewards(rewards):
     rewards = np.asarray(rewards)
     window = int(
         np.clip(len(rewards) // TRAIN_WINDOW_DIVISOR, TRAIN_WINDOW_MIN, TRAIN_WINDOW_MAX)
     )
-    fig, ax_reward = plt.subplots(figsize=(10, 5))
-    episodes = np.arange(len(rewards))
-
-    ax_reward.plot(episodes, rewards, alpha=0.3, label="Raw", color="C0")
-
-    smoothed = np.array(
+    return np.array(
         [np.mean(rewards[max(0, i - window + 1): i + 1]) for i in range(len(rewards))]
     )
-    ax_reward.plot(episodes, smoothed, label=f"Mean (w={window})", linewidth=2, color="C0")
+
+
+def plot_combined_training_curve(
+    rewards_with_planner,
+    rewards_without_planner,
+    title="",
+    epsilon_with_planner=None,
+    epsilon_2_with_planner=None,
+    epsilon_without_planner=None,
+    stats_with_planner=None,
+    stats_without_planner=None,
+):
+    """
+    Single figure: smoothed rewards and epsilon traces for planner vs no-planner runs.
+    Blue / orange / orange dashed = with planner; red / yellow = without planner.
+    """
+    rewards_with_planner = np.asarray(rewards_with_planner)
+    rewards_without_planner = np.asarray(rewards_without_planner)
+
+    fig, ax_reward = plt.subplots(figsize=(12, 5))
+    legend_handles = []
+    legend_labels = []
+
+    episodes_wp = np.arange(len(rewards_with_planner))
+    smoothed_wp = _smoothed_rewards(rewards_with_planner)
+    (ln_wp,) = ax_reward.plot(
+        episodes_wp,
+        smoothed_wp,
+        color="blue",
+        linewidth=2,
+        label="Reward (with planner)",
+    )
+    legend_handles.append(ln_wp)
+    legend_labels.append("Reward (with planner)")
+
+    episodes_np = np.arange(len(rewards_without_planner))
+    smoothed_np = _smoothed_rewards(rewards_without_planner)
+    (ln_np,) = ax_reward.plot(
+        episodes_np,
+        smoothed_np,
+        color="red",
+        linewidth=2,
+        label="Reward (no planner)",
+    )
+    legend_handles.append(ln_np)
+    legend_labels.append("Reward (no planner)")
 
     ax_reward.set_title(title)
     ax_reward.set_xlabel("Episodes")
     ax_reward.set_ylabel("Reward")
 
-    legend_handles = []
-    legend_labels = []
+    ax_eps = ax_reward.twinx()
+    ax_eps.set_ylabel("Epsilon")
+    ax_eps.set_ylim(0.0, 1.05)
 
-    if epsilon_per_episode is not None:
-        eps = np.asarray(epsilon_per_episode, dtype=float)
-        if len(eps) == len(rewards):
-            ax_eps = ax_reward.twinx()
+    if epsilon_with_planner is not None:
+        eps = np.asarray(epsilon_with_planner, dtype=float)
+        if len(eps) == len(rewards_with_planner):
             (ln_eps,) = ax_eps.plot(
-                episodes, eps, color="tab:orange", linewidth=1.5, alpha=0.9, label="ε"
+                episodes_wp,
+                eps,
+                color="orange",
+                linewidth=1.5,
+                alpha=0.9,
+                label="ε (with planner)",
             )
-            ax_eps.set_ylabel("Epsilon")
-            ax_eps.set_ylim(0.0, 1.05)
-            ax_eps.tick_params(axis="y")
             legend_handles.append(ln_eps)
-            legend_labels.append("ε")
+            legend_labels.append("ε (with planner)")
 
-            if epsilon_2_per_episode is not None:
-                eps2 = np.asarray(epsilon_2_per_episode, dtype=float)
-                if len(eps2) == len(rewards):
-                    (ln_eps2,) = ax_eps.plot(
-                        episodes,
-                        eps2,
-                        color="tab:green",
-                        linewidth=1.5,
-                        alpha=0.85,
-                        linestyle="--",
-                        label="ε₂ (planner mix)",
-                    )
-                    legend_handles.append(ln_eps2)
-                    legend_labels.append("ε₂ (planner mix)")
+    if epsilon_2_with_planner is not None:
+        eps2 = np.asarray(epsilon_2_with_planner, dtype=float)
+        if len(eps2) == len(rewards_with_planner):
+            (ln_eps2,) = ax_eps.plot(
+                episodes_wp,
+                eps2,
+                color="orange",
+                linewidth=1.5,
+                alpha=0.9,
+                linestyle="--",
+                label="ε₂ (with planner)",
+            )
+            legend_handles.append(ln_eps2)
+            legend_labels.append("ε₂ (with planner)")
 
-    if epsilon_floor_episode is not None:
-        ln_floor = ax_reward.axvline(
-            epsilon_floor_episode,
-            color="purple",
-            linestyle=":",
-            linewidth=1,
-            label="Epsilon floor",
+    if epsilon_without_planner is not None:
+        eps_np = np.asarray(epsilon_without_planner, dtype=float)
+        if len(eps_np) == len(rewards_without_planner):
+            (ln_eps_np,) = ax_eps.plot(
+                episodes_np,
+                eps_np,
+                color="yellow",
+                linewidth=1.5,
+                alpha=0.9,
+                label="ε (no planner)",
+            )
+            legend_handles.append(ln_eps_np)
+            legend_labels.append("ε (no planner)")
+
+    ax_reward.legend(legend_handles, legend_labels, loc="upper left")
+
+    if stats_with_planner is not None:
+        ax_reward.text(
+            0.99,
+            0.98,
+            "DQN + planner\n" + _training_stats_text(stats_with_planner, include_planner_timing=True),
+            transform=ax_reward.transAxes,
+            ha="right",
+            va="top",
+            fontsize=9,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.9, edgecolor="blue"),
         )
-        legend_handles.append(ln_floor)
-        legend_labels.append("Epsilon floor")
 
-    h_r, lab_r = ax_reward.get_legend_handles_labels()
-    if legend_handles:
-        ax_reward.legend(h_r + legend_handles, lab_r + legend_labels, loc="upper left")
-    else:
-        ax_reward.legend(h_r, lab_r, loc="best")
+    if stats_without_planner is not None:
+        ax_reward.text(
+            0.99,
+            0.52,
+            "DQN base\n" + _training_stats_text(stats_without_planner, include_planner_timing=False),
+            transform=ax_reward.transAxes,
+            ha="right",
+            va="top",
+            fontsize=9,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.9, edgecolor="red"),
+        )
 
     fig.tight_layout()
 
-    _save_figure(fig, title, "Training Curve")
+    _save_figure(fig, title, "Training Curve Combined")
     if PLOT_SHOW:
         plt.show()
 

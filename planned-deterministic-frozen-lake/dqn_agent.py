@@ -4,6 +4,7 @@
 
 
 import random
+import time
 from collections import deque
 from typing import Dict, List, Optional
 
@@ -53,11 +54,8 @@ GAMMA = 0.99
 LR = 1e-3
 EPSILON_START = 1.0
 EPSILON_MIN = 0.05
-EPSILON_DECAY_STEPS = 50000
 EPSILON_2_START = 1.0
 EPSILON_2_MIN = 0.25
-EPSILON_2_DECAY_STEPS = 50000
-MEMORY_SIZE = 50000
 BATCH_SIZE = 128
 WARM_UP_STEPS = 512
 TARGET_UPDATE_STEPS = 100
@@ -84,20 +82,22 @@ class QNetwork(nn.Module):
 # DQN Agent
 # ===============================
 class DQNAgent:
-    def __init__(self, state_size, action_size, use_planner, device=None):
+    def __init__(self, state_size, action_size, use_planner, epsilon_decay_steps, epsilon_2_decay_steps, memory_size,
+                 device=None):
         self.state_size = state_size
         self.action_size = action_size
 
         self.gamma = GAMMA
         self.epsilon = EPSILON_START
         self.epsilon_min = EPSILON_MIN
-        self.epsilon_decay_steps = EPSILON_DECAY_STEPS
+        self.epsilon_decay_steps = epsilon_decay_steps
         self.epsilon_2 = EPSILON_2_START
         self.epsilon_2_min = EPSILON_2_MIN
-        self.epsilon_2_decay_steps = EPSILON_2_DECAY_STEPS
+        self.epsilon_2_decay_steps = epsilon_2_decay_steps
         self.batch_size = BATCH_SIZE
         self.warm_up_steps = WARM_UP_STEPS
         self.target_update_steps = TARGET_UPDATE_STEPS
+        self.memory_size = memory_size
 
         self.use_planner = use_planner
         self.device = device if device is not None else pick_device()
@@ -109,13 +109,17 @@ class DQNAgent:
         self.optimizer = optim.Adam(self.model.parameters(), lr=LR)
         self.loss_fn = nn.SmoothL1Loss()
 
-        self.memory = deque(maxlen=MEMORY_SIZE)
+        self.memory = deque(maxlen=memory_size)
         self.steps_done = 0
         self.learn_steps = 0
         self.planner_calls = 0
         self.planner_misses = 0
         self.planner_cache_hits = 0
         self._plan_cache: Dict[int, Optional[List[str]]] = {}
+        self.plan_time_seconds = 0.0
+        self.training_time_seconds = 0.0
+        self.training_episodes = 0
+        self.plan_time_pct = 0.0
 
     def one_hot(self, state):
         vec = np.zeros(self.state_size, dtype=np.float32)
@@ -149,26 +153,27 @@ class DQNAgent:
         return planned_action
 
     def get_planned_action(self, env, state):
-        if state in self._plan_cache:
-            self.planner_cache_hits += 1
-            plan = self._plan_cache[state]
-        else:
-            self.planner_calls += 1
-            problem = planner.define_problem(env, state)
-            plan = planner.build_plan(problem)
-            print("current map:")
-            print(format_frozen_lake_state(env, state))
-            print("plan: " + str(plan))
-            self._plan_cache[state] = plan
+        t0 = time.perf_counter()
+        try:
+            if state in self._plan_cache:
+                self.planner_cache_hits += 1
+                plan = self._plan_cache[state]
+            else:
+                self.planner_calls += 1
+                problem = planner.define_problem(env, state)
+                plan = planner.build_plan(problem)
+                self._plan_cache[state] = plan
+                if plan is None or len(plan) == 0:
+                    self.planner_misses += 1
+
             if plan is None or len(plan) == 0:
-                self.planner_misses += 1
+                return None
 
-        if plan is None or len(plan) == 0:
-            return None
-
-        # "move_{s}_{next_state}_{a}" -> gym_action
-        parts = plan[0].split("_")
-        return int(parts[-1])
+            # "move_{s}_{next_state}_{a}" -> gym_action
+            parts = plan[0].split("_")
+            return int(parts[-1])
+        finally:
+            self.plan_time_seconds += time.perf_counter() - t0
 
     def store(self, transition):
         self.memory.append(transition)
@@ -237,24 +242,32 @@ def _evaluation_episode_seed(base_seed, episode_idx):
     return None if base_seed is None else base_seed + episode_idx
 
 
-def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
+def _make_env(map_desc):
+    base_env = gym.make(ENV_ID, is_slippery=True, desc=map_desc)
+    return SlipperyProbabilityWrapper(base_env, p_nominal=0.8, p_slip=0.1)
+
+
+def train_dqn(episodes, use_planner, rng_seed, env_seed, map_desc, map_name, epsilon_decay_steps, epsilon_2_decay_steps,
+              memory_size, log_every=50):
     set_seed(rng_seed)
     env_base = env_seed
 
-    base_env = gym.make(ENV_ID, is_slippery=True)
-    env = SlipperyProbabilityWrapper(base_env, p_nominal=0.8, p_slip=0.1)
+    env = _make_env(map_desc)
 
     state_size = env.observation_space.n
     action_size = env.action_space.n
 
     device = pick_device()
-    agent = DQNAgent(state_size, action_size, use_planner=use_planner, device=device)
+    agent = DQNAgent(state_size, action_size, use_planner=use_planner, epsilon_decay_steps=epsilon_decay_steps,
+                     epsilon_2_decay_steps=epsilon_2_decay_steps, memory_size=memory_size, device=device)
 
     print(
         "[train] start | "
+        f"map={map_name} | "
         f"device={device} | "
         f"lr={LR} gamma={GAMMA} | "
         f"batch={BATCH_SIZE} warm_up={WARM_UP_STEPS} target_update={TARGET_UPDATE_STEPS} | "
+        f"eps_decay={epsilon_decay_steps} eps2_decay={epsilon_2_decay_steps} memory={memory_size} | "
         f"episodes={episodes}"
     )
 
@@ -262,6 +275,7 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     epsilon_per_episode: List[float] = []
     epsilon_2_per_episode: List[float] = []
 
+    train_start = time.perf_counter()
     for ep in range(episodes):
         # Seed only the first reset so the run is reproducible without replaying
         # the same slippery outcomes at the start of every episode.
@@ -307,6 +321,15 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
     wins = sum(1 for r in rewards if r > 0)
     env.close()
 
+    agent.training_episodes = episodes
+    agent.training_time_seconds = time.perf_counter() - train_start
+    if agent.training_time_seconds > 0:
+        agent.plan_time_pct = (
+            100.0 * agent.plan_time_seconds / agent.training_time_seconds
+        )
+    else:
+        agent.plan_time_pct = 0.0
+
     last_n = min(50, episodes)
     tail_final = rewards[-last_n:]
     win_last_n = 100 * _win_rate(tail_final)
@@ -315,13 +338,16 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
         "[train] summary | "
         f"win_rate_all={100 * wins / episodes:.1f}% | "
         f"win_rate_last{last_n}={win_last_n:.1f}% | "
-        f"mean_reward={sum(rewards) / len(rewards):.3f}",
+        f"mean_reward={sum(rewards) / len(rewards):.3f} | "
+        f"time={agent.training_time_seconds:.2f}s",
     ]
     if agent.use_planner:
         pm = agent.planner_misses
         pc = agent.planner_calls
         miss_pct = 100.0 * pm / pc if pc else 0.0
         parts.append(
+            f"plan_time={agent.plan_time_seconds:.2f}s "
+            f"({agent.plan_time_pct:.2f}% of training) | "
             f"planner_solves={pc} cache_hits={agent.planner_cache_hits} "
             f"miss={pm}/{pc} ({miss_pct:.1f}%)"
         )
@@ -336,11 +362,11 @@ def train_dqn(episodes, use_planner, rng_seed, env_seed, log_every=50):
 # ===============================
 # TEST
 # ===============================
-def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
+def test_dqn(agent, episodes, rng_seed, env_seed, map_desc, map_name):
     set_seed(rng_seed)
     env_base = env_seed
 
-    env = gym.make(ENV_ID, is_slippery=True)
+    env = _make_env(map_desc)
     agent.epsilon = 0.0
     agent.epsilon_2 = 0.0
     agent.steps_done = 0
@@ -374,6 +400,7 @@ def test_dqn(agent, episodes, rng_seed=42, env_seed=42):
 
     print(
         "[test] summary | "
+        f"map={map_name} | "
         f"episodes={episodes} | "
         f"success_rate_all={100 * wins / episodes:.1f}% | "
         f"success_rate_last{last_n}={win_last_n:.1f}% | "
