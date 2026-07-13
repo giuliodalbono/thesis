@@ -63,11 +63,19 @@ def _training_stats_text(stats, include_planner_timing=False):
     return "\n".join(lines)
 
 
-def _smoothed_rewards(rewards):
+def _episode_axis(n_points, offset=0):
+    return np.arange(offset, offset + n_points)
+
+
+COMBINED_TRAIN_SMOOTH_WINDOW = 200
+
+
+def _smoothed_rewards(rewards, window=None):
     rewards = np.asarray(rewards)
-    window = int(
-        np.clip(len(rewards) // TRAIN_WINDOW_DIVISOR, TRAIN_WINDOW_MIN, TRAIN_WINDOW_MAX)
-    )
+    if window is None:
+        window = int(
+            np.clip(len(rewards) // TRAIN_WINDOW_DIVISOR, TRAIN_WINDOW_MIN, TRAIN_WINDOW_MAX)
+        )
     return np.array(
         [np.mean(rewards[max(0, i - window + 1): i + 1]) for i in range(len(rewards))]
     )
@@ -82,10 +90,12 @@ def plot_combined_training_curve(
     epsilon_without_planner=None,
     stats_with_planner=None,
     stats_without_planner=None,
+    x_offset_without_planner=0,
 ):
     """
     Single figure: smoothed rewards and epsilon traces for planner vs no-planner runs.
     Blue / orange / orange dashed = with planner; red / yellow = without planner.
+    x_offset_without_planner shifts only the no-planner reward and epsilon curves on the x-axis.
     """
     rewards_with_planner = np.asarray(rewards_with_planner)
     rewards_without_planner = np.asarray(rewards_without_planner)
@@ -95,7 +105,7 @@ def plot_combined_training_curve(
     legend_labels = []
 
     episodes_wp = np.arange(len(rewards_with_planner))
-    smoothed_wp = _smoothed_rewards(rewards_with_planner)
+    smoothed_wp = _smoothed_rewards(rewards_with_planner, window=COMBINED_TRAIN_SMOOTH_WINDOW)
     (ln_wp,) = ax_reward.plot(
         episodes_wp,
         smoothed_wp,
@@ -106,8 +116,8 @@ def plot_combined_training_curve(
     legend_handles.append(ln_wp)
     legend_labels.append("Reward (with planner)")
 
-    episodes_np = np.arange(len(rewards_without_planner))
-    smoothed_np = _smoothed_rewards(rewards_without_planner)
+    episodes_np = _episode_axis(len(rewards_without_planner), x_offset_without_planner)
+    smoothed_np = _smoothed_rewards(rewards_without_planner, window=COMBINED_TRAIN_SMOOTH_WINDOW)
     (ln_np,) = ax_reward.plot(
         episodes_np,
         smoothed_np,
