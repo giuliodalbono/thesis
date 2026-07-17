@@ -27,15 +27,21 @@ def _safe_filename(title, fallback):
     return f"{base}.png"
 
 
-def _save_current_plot(title, fallback):
+def _resolve_output_dir(output_subdir=None):
+    path = OUTPUT_DIR if not output_subdir else OUTPUT_DIR / output_subdir
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _save_current_plot(title, fallback, output_subdir=None):
     filename = _safe_filename(title, fallback)
-    path = OUTPUT_DIR / filename
+    path = _resolve_output_dir(output_subdir) / filename
     plt.savefig(path, dpi=150)
 
 
-def _save_figure(fig, title, fallback):
+def _save_figure(fig, title, fallback, output_subdir=None):
     filename = _safe_filename(title, fallback)
-    path = OUTPUT_DIR / filename
+    path = _resolve_output_dir(output_subdir) / filename
     fig.savefig(path, dpi=150)
 
 
@@ -91,6 +97,7 @@ def plot_combined_training_curve(
     stats_with_planner=None,
     stats_without_planner=None,
     x_offset_without_planner=0,
+    output_subdir=None,
 ):
     """
     Single figure: smoothed rewards and epsilon traces for planner vs no-planner runs.
@@ -207,14 +214,14 @@ def plot_combined_training_curve(
 
     fig.tight_layout()
 
-    _save_figure(fig, title, "Training Curve Combined")
+    _save_figure(fig, title, "Training Curve Combined", output_subdir=output_subdir)
     if PLOT_SHOW:
         plt.show()
 
     plt.close(fig)
 
 
-def plot_test_distribution(results, title=""):
+def plot_test_distribution(results, title="", output_subdir=None):
     """Histogram + box plot of test episode returns; mean and std in box."""
     results = np.asarray(results)
     mean = results.mean()
@@ -245,8 +252,47 @@ def plot_test_distribution(results, title=""):
     fig.suptitle(title)
     fig.tight_layout()
 
-    _save_figure(fig, title, "Test Distribution")
+    _save_figure(fig, title, "Test Distribution", output_subdir=output_subdir)
     if PLOT_SHOW:
         plt.show()
 
+    plt.close(fig)
+
+
+def plot_single_training_curve(rewards, title="", stats=None, output_subdir=None):
+    """
+    Single-series training/test curve with moving-average smoothing.
+    Useful when plotting one agent only (e.g. PPO without comparisons).
+    """
+    rewards = np.asarray(rewards, dtype=float)
+    fig, ax = plt.subplots(figsize=(12, 5))
+
+    episodes = np.arange(len(rewards))
+    smoothed = _smoothed_rewards(rewards, window=COMBINED_TRAIN_SMOOTH_WINDOW)
+
+    if len(rewards) > 0:
+        ax.plot(episodes, rewards, color="C0", alpha=0.2, linewidth=1, label="Reward (raw)")
+    ax.plot(episodes, smoothed, color="C0", linewidth=2, label="Reward (smoothed)")
+
+    ax.set_title(title)
+    ax.set_xlabel("Episodes")
+    ax.set_ylabel("Reward")
+    ax.legend(loc="upper left")
+
+    if stats is not None:
+        ax.text(
+            0.99,
+            0.98,
+            _training_stats_text(stats, include_planner_timing=False),
+            transform=ax.transAxes,
+            ha="right",
+            va="top",
+            fontsize=9,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.9, edgecolor="C0"),
+        )
+
+    fig.tight_layout()
+    _save_figure(fig, title, "Training Curve Single", output_subdir=output_subdir)
+    if PLOT_SHOW:
+        plt.show()
     plt.close(fig)

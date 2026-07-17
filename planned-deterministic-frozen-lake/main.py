@@ -1,5 +1,10 @@
-from dqn_agent import get_checkpoint_dir, load_agent_checkpoint, train_dqn, test_dqn
-from plot_utility import plot_combined_training_curve, plot_test_distribution
+from plot_utility import (
+    plot_combined_training_curve,
+    plot_single_training_curve,
+    plot_test_distribution,
+)
+from ppo_agent import train_ppo, test_ppo
+from sac_agent import train_sac, test_sac
 
 
 # --- Run Configuration ---
@@ -8,9 +13,23 @@ ENV_SEED = None  # if None, uses RNG_SEED for Gymnasium env.reset base
 TRAIN_EPISODES = 10000  # Up to 6x6 3k, up to 15x15 6k, up to 17x17 10k
 TEST_EPISODES = 5000
 
+# Toggle experiments from here (comment/uncomment as needed).
+RUN_DQN = False
+RUN_PPO = False
+RUN_SAC = True
+
+# PPO configuration (planner-free by design).
+PPO_EVAL_DETERMINISTIC = True
+PPO_OUTPUT_SUBDIR = "ppo"
+
+# SAC configuration (planner-free by design).
+SAC_EVAL_DETERMINISTIC = True
+SAC_OUTPUT_SUBDIR = "sac"
+
 # Map names to run (must match MAP_CONFIGS "name" entries).
 # SELECTED_MAPS = ["4x4", "5x5", "6x6", "7x7", "8x8"]
-SELECTED_MAPS = ["16x16", "17x17"]
+# Use ["ALL"] to run every map in MAP_CONFIGS.
+SELECTED_MAPS = ["ALL"]
 
 # Planner-only warm-up: fixed epsilons at 1.0, planned actions only, then normal training.
 ENABLE_PLANNER_WARM_UP = True
@@ -292,8 +311,107 @@ MAP_CONFIGS = [
     }
 ]
 
+PPO_PRESETS = {
+    "small": {
+        "size_range": (4, 8),
+        "label": "small",
+        "total_timesteps": 150_000,
+        "learning_rate": 3e-4,
+        "n_steps": 1024,
+        "batch_size": 64,
+        "gamma": 0.99,
+        "ent_coef": 0.01,
+        "gae_lambda": 0.95,
+        "clip_range": 0.2,
+    },
+    "medium": {
+        "size_range": (9, 12),
+        "label": "medium",
+        "total_timesteps": 400_000,
+        "learning_rate": 2.5e-4,
+        "n_steps": 2048,
+        "batch_size": 128,
+        "gamma": 0.995,
+        "ent_coef": 0.02,
+        "gae_lambda": 0.97,
+        "clip_range": 0.2,
+    },
+    "large": {
+        "size_range": (13, 17),
+        "label": "large",
+        "total_timesteps": 1_000_000,
+        "learning_rate": 1e-4,
+        "n_steps": 4096,
+        "batch_size": 256,
+        "gamma": 0.995,
+        "ent_coef": 0.03,
+        "gae_lambda": 0.98,
+        "clip_range": 0.15,
+        "vf_coef": 0.5,
+        "max_grad_norm": 0.5,
+    },
+}
+
+
+def _ppo_preset_for_map_size(size):
+    for preset in PPO_PRESETS.values():
+        lo, hi = preset["size_range"]
+        if lo <= size <= hi:
+            return preset
+    raise ValueError(f"No PPO preset configured for map size {size}.")
+
+
+SAC_PRESETS = {
+    "small": {
+        "size_range": (4, 8),
+        "label": "small",
+        "total_timesteps": 200_000,
+        "learning_rate": 3e-4,
+        "batch_size": 128,
+        "gamma": 0.99,
+        "tau": 0.005,
+        "train_freq": 1,
+        "gradient_steps": 1,
+        "ent_coef": "auto",
+    },
+    "medium": {
+        "size_range": (9, 12),
+        "label": "medium",
+        "total_timesteps": 500_000,
+        "learning_rate": 2e-4,
+        "batch_size": 256,
+        "gamma": 0.995,
+        "tau": 0.005,
+        "train_freq": 1,
+        "gradient_steps": 1,
+        "ent_coef": "auto",
+    },
+    "large": {
+        "size_range": (13, 17),
+        "label": "large",
+        "total_timesteps": 1_200_000,
+        "learning_rate": 1e-4,
+        "batch_size": 256,
+        "gamma": 0.995,
+        "tau": 0.005,
+        "train_freq": 1,
+        "gradient_steps": 1,
+        "ent_coef": "auto_0.1",
+    },
+}
+
+
+def _sac_preset_for_map_size(size):
+    for preset in SAC_PRESETS.values():
+        lo, hi = preset["size_range"]
+        if lo <= size <= hi:
+            return preset
+    raise ValueError(f"No SAC preset configured for map size {size}.")
+
 
 def run_for_map(map_cfg, env_seed, enable_planner_warm_up):
+    from dqn_agent import get_checkpoint_dir, load_agent_checkpoint, train_dqn, test_dqn
+
     map_name = map_cfg["name"]
     map_desc = map_cfg["desc"]
     epsilon_decay_factor = map_cfg["epsilon_decay_factor"]
@@ -435,7 +553,130 @@ def run_for_map(map_cfg, env_seed, enable_planner_warm_up):
     )
 
 
+def run_ppo_for_map(map_cfg, env_seed):
+    map_size = map_cfg["size"]
+    map_name = map_cfg["name"]
+    map_desc = map_cfg["desc"]
+    preset = _ppo_preset_for_map_size(map_size)
+
+    print(f"\n{'=' * 60}")
+    print(f"FrozenLake {map_name} (PPO)")
+    print(f"{'=' * 60}")
+
+    print("--- Training (PPO) ---")
+    ppo_model, ppo_train_metrics = train_ppo(
+        total_timesteps=preset["total_timesteps"],
+        rng_seed=RNG_SEED,
+        env_seed=env_seed,
+        map_desc=map_desc,
+        map_name=map_name,
+        learning_rate=preset["learning_rate"],
+        n_steps=preset["n_steps"],
+        batch_size=preset["batch_size"],
+        gamma=preset["gamma"],
+        ent_coef=preset["ent_coef"],
+        gae_lambda=preset["gae_lambda"],
+        clip_range=preset["clip_range"],
+        vf_coef=preset.get("vf_coef", 0.5),
+        max_grad_norm=preset.get("max_grad_norm", 0.5),
+    )
+
+    train_rewards = ppo_train_metrics["training_rewards"]
+    plot_single_training_curve(
+        train_rewards,
+        title=f"FrozenLake {map_name} Train Curve - PPO",
+        stats={
+            "episodes": ppo_train_metrics["episodes"],
+            "training_time_s": ppo_train_metrics["training_time_seconds"],
+        },
+        output_subdir=PPO_OUTPUT_SUBDIR,
+    )
+
+    print(f"--- Evaluation (PPO) [{map_name}] ---")
+    test_rewards = test_ppo(
+        ppo_model,
+        episodes=TEST_EPISODES,
+        rng_seed=RNG_SEED,
+        env_seed=env_seed,
+        map_desc=map_desc,
+        map_name=map_name,
+        deterministic=PPO_EVAL_DETERMINISTIC,
+    )
+    plot_test_distribution(
+        test_rewards,
+        title=f"FrozenLake {map_name} Test Distribution - PPO",
+        output_subdir=PPO_OUTPUT_SUBDIR,
+    )
+    plot_single_training_curve(
+        test_rewards,
+        title=f"FrozenLake {map_name} Test Curve - PPO",
+        output_subdir=PPO_OUTPUT_SUBDIR,
+    )
+
+
+def run_sac_for_map(map_cfg, env_seed):
+    map_size = map_cfg["size"]
+    map_name = map_cfg["name"]
+    map_desc = map_cfg["desc"]
+    preset = _sac_preset_for_map_size(map_size)
+
+    print(f"\n{'=' * 60}")
+    print(f"FrozenLake {map_name} (SAC)")
+    print(f"{'=' * 60}")
+
+    print("--- Training (SAC) ---")
+    sac_model, sac_train_metrics = train_sac(
+        total_timesteps=preset["total_timesteps"],
+        rng_seed=RNG_SEED,
+        env_seed=env_seed,
+        map_desc=map_desc,
+        map_name=map_name,
+        learning_rate=preset["learning_rate"],
+        batch_size=preset["batch_size"],
+        gamma=preset["gamma"],
+        tau=preset["tau"],
+        train_freq=preset["train_freq"],
+        gradient_steps=preset["gradient_steps"],
+        ent_coef=preset["ent_coef"],
+    )
+
+    train_rewards = sac_train_metrics["training_rewards"]
+    plot_single_training_curve(
+        train_rewards,
+        title=f"FrozenLake {map_name} Train Curve - SAC",
+        stats={
+            "episodes": sac_train_metrics["episodes"],
+            "training_time_s": sac_train_metrics["training_time_seconds"],
+        },
+        output_subdir=SAC_OUTPUT_SUBDIR,
+    )
+
+    print(f"--- Evaluation (SAC) [{map_name}] ---")
+    test_rewards = test_sac(
+        sac_model,
+        episodes=TEST_EPISODES,
+        rng_seed=RNG_SEED,
+        env_seed=env_seed,
+        map_desc=map_desc,
+        map_name=map_name,
+        deterministic=SAC_EVAL_DETERMINISTIC,
+    )
+    plot_test_distribution(
+        test_rewards,
+        title=f"FrozenLake {map_name} Test Distribution - SAC",
+        output_subdir=SAC_OUTPUT_SUBDIR,
+    )
+    plot_single_training_curve(
+        test_rewards,
+        title=f"FrozenLake {map_name} Test Curve - SAC",
+        output_subdir=SAC_OUTPUT_SUBDIR,
+    )
+
+
 def _selected_map_configs():
+    if len(SELECTED_MAPS) == 1 and SELECTED_MAPS[0].upper() == "ALL":
+        return MAP_CONFIGS
+
     configs_by_name = {cfg["name"]: cfg for cfg in MAP_CONFIGS}
     missing = [name for name in SELECTED_MAPS if name not in configs_by_name]
     if missing:
@@ -448,7 +689,12 @@ def main():
     env_seed = ENV_SEED if ENV_SEED is not None else RNG_SEED
 
     for map_cfg in _selected_map_configs():
-        run_for_map(map_cfg, env_seed, enable_planner_warm_up=ENABLE_PLANNER_WARM_UP)
+        if RUN_DQN:
+            run_for_map(map_cfg, env_seed, enable_planner_warm_up=ENABLE_PLANNER_WARM_UP)
+        if RUN_PPO:
+            run_ppo_for_map(map_cfg, env_seed)
+        if RUN_SAC:
+            run_sac_for_map(map_cfg, env_seed)
 
 
 if __name__ == "__main__":
