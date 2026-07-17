@@ -73,7 +73,10 @@ def _validate_decay_factor(factor: float, name: str) -> None:
 
 
 def get_checkpoint_dir() -> Path:
-    checkpoint_dir = Path(__file__).resolve().parents[1] / "resources" / "checkpoints"
+    project_root = Path(__file__).resolve().parents[1]
+    checkpoint_dir = (
+        project_root / "resources" / "planned-deterministic-frozen-lake" / "checkpoints"
+    )
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
     return checkpoint_dir
 

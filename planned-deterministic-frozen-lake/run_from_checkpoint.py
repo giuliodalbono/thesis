@@ -9,7 +9,10 @@ from dqn_agent import (
 from plot_utility import plot_combined_training_curve, plot_test_distribution
 
 
-CHECKPOINT_PATH = "resources/checkpoints/FrozenLake_10x10_planner_warmup.pt"
+CHECKPOINT_PATH = (
+    "resources/planned-deterministic-frozen-lake/checkpoints/"
+    "FrozenLake_10x10_planner_warmup.pt"
+)
 MODE = "test"  # "test" | "train_and_test"
 RNG_SEED = 42
 ENV_SEED = None
@@ -22,7 +25,17 @@ def _resolve_checkpoint_path(path_str: str) -> Path:
     checkpoint_file = Path(path_str)
     if checkpoint_file.is_absolute():
         return checkpoint_file
-    return Path(__file__).resolve().parents[1] / checkpoint_file
+
+    project_root = Path(__file__).resolve().parents[1]
+    candidates = [
+        project_root / checkpoint_file,
+        project_root / "resources" / "planned-deterministic-frozen-lake" / "checkpoints" / checkpoint_file.name,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return candidates[0]
 
 
 def _validate_mode(mode: str) -> None:

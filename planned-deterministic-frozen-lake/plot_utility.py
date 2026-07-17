@@ -1,6 +1,7 @@
 """
 Plotting utilities for training curves, test reward distributions, and multi-run summary.
-Figures saved in resources/graphs/; window size for smoothing scales with data length.
+Figures are saved under the active graphs directory in resources/; window size for
+smoothing scales with data length.
 """
 
 import re
@@ -11,8 +12,24 @@ import numpy as np
 
 
 PLOT_SHOW = True
-OUTPUT_DIR = Path(__file__).resolve().parents[1] / "resources" / "graphs"
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+_GRAPH_DIR_CANDIDATES = [
+    PROJECT_ROOT / "resources" / "planned-deterministic-frozen-lake" / "graphs",
+    PROJECT_ROOT / "resources" / "graphs",
+]
+
+
+def _resolve_graph_root():
+    for candidate in _GRAPH_DIR_CANDIDATES:
+        if candidate.exists():
+            candidate.mkdir(parents=True, exist_ok=True)
+            return candidate
+    fallback = _GRAPH_DIR_CANDIDATES[0]
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback
+
+
+OUTPUT_DIR = _resolve_graph_root()
 TRAIN_WINDOW_DIVISOR = 50
 TRAIN_WINDOW_MIN = 50
 TRAIN_WINDOW_MAX = 1000
