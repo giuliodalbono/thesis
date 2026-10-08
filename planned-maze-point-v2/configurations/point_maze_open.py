@@ -1,17 +1,17 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from point_maze_config_common import PointMazeConfigValidation
+from .common import PointMazeConfigValidation
 
 
 @dataclass(frozen=True)
 class PointMazeOpenConfig(PointMazeConfigValidation):
-    """Current validated configuration for the obstacle-free Open PointMaze."""
+    """Existing Open DQN preset, preserved during the architecture refactor."""
 
     env_id: str = "PointMaze_Open-v3"
     seed: int = 42
     max_episode_steps: int = 500
-    warmup_episode_counts: tuple = (25, 50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 1000, 1500, 2000)
+    warmup_episode_counts: tuple = (25, 50, 100, 200)
     evaluation_episodes: int = 5_000
 
     replay_capacity: int = 100_000
@@ -31,9 +31,11 @@ class PointMazeOpenConfig(PointMazeConfigValidation):
     random_recovery_steps: int = 15
     minimum_directional_progress: float = 0.002
 
-    output_dir: Path = Path(__file__).resolve().parents[1] / "resources" / "planned-maze-point-v2"
+    output_dir: Path = Path(__file__).resolve().parents[2] / "resources" / "planned-maze-point-v2"
 
     def validate(self) -> None:
+        if self.env_id != "PointMaze_Open-v3":
+            raise ValueError("Use the configuration class matching the environment")
         self._validate_common()
 
     def environment_slug(self) -> str:

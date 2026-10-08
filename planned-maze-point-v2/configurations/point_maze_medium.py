@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
-from point_maze_config_common import PointMazeConfigValidation
+from .common import PointMazeConfigValidation
 
 
 @dataclass(frozen=True)
@@ -15,7 +15,7 @@ class PointMazeMediumConfig(PointMazeConfigValidation):
     env_id: str = "PointMaze_Medium-v3"
     seed: int = 42
     max_episode_steps: int = 1_000
-    warmup_episode_counts: tuple = (25_000, 30_000, 35_000, 40_000, 45_000, 50_000)
+    warmup_episode_counts: tuple = (1_000, 2_000, 5_000)
     evaluation_episodes: int = 5_000
 
     replay_capacity: int = 200_000
@@ -35,9 +35,11 @@ class PointMazeMediumConfig(PointMazeConfigValidation):
     random_recovery_steps: int = 15
     minimum_directional_progress: float = 0.002
 
-    output_dir: Path = Path(__file__).resolve().parents[1] / "resources" / "planned-maze-point-v2"
+    output_dir: Path = Path(__file__).resolve().parents[2] / "resources" / "planned-maze-point-v2"
 
     def validate(self) -> None:
+        if self.env_id != "PointMaze_Medium-v3":
+            raise ValueError("Use the configuration class matching the environment")
         self._validate_common()
 
     def environment_slug(self) -> str:

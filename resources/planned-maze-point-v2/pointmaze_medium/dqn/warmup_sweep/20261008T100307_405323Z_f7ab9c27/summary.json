@@ -1,0 +1,109 @@
+{
+  "configuration": {
+    "env_id": "PointMaze_Medium-v3",
+    "seed": 42,
+    "max_episode_steps": 1000,
+    "warmup_episode_counts": [
+      1000,
+      2000,
+      5000
+    ],
+    "evaluation_episodes": 5000,
+    "replay_capacity": 200000,
+    "batch_size": 256,
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "target_sync_updates": 5000,
+    "learning_starts_transitions": 5000,
+    "train_every_steps": 4,
+    "updates_per_training_event": 1,
+    "epsilon_start": 1.0,
+    "epsilon_final": 0.05,
+    "epsilon_decay_fraction": 0.75,
+    "stuck_detection_steps": 10,
+    "opposite_recovery_steps": 15,
+    "random_recovery_steps": 15,
+    "minimum_directional_progress": 0.002,
+    "output_dir": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point-v2",
+    "agent_name": "dqn",
+    "planner_name": "point_maze_medium",
+    "configuration_class": "PointMazeMediumConfig"
+  },
+  "protocol": {
+    "cumulative_single_agent": true,
+    "evaluation_episodes_per_checkpoint": 5000,
+    "evaluation_epsilon": 0.0,
+    "evaluation_learns": false,
+    "recovery_can_activate_during_evaluation": true,
+    "note": "Recovery follows the configured detection threshold."
+  },
+  "checkpoints": [
+    {
+      "warmup_episodes": 1000,
+      "additional_warmup_episodes": 1000,
+      "warmup_summary": {
+        "episodes": 1000,
+        "environment_steps": 145559,
+        "success_rate": 1.0,
+        "mean_reward": 1.0,
+        "recovery_events": 0,
+        "recovery_actions": 0,
+        "elapsed_seconds": 58.645345916000004,
+        "optimizer_updates": 35140
+      },
+      "evaluation_summary": {
+        "episodes": 5000,
+        "environment_steps": 4689818,
+        "success_rate": 0.097,
+        "mean_reward": 0.097,
+        "recovery_events": 43529,
+        "recovery_actions": 1286578
+      }
+    },
+    {
+      "warmup_episodes": 2000,
+      "additional_warmup_episodes": 1000,
+      "warmup_summary": {
+        "episodes": 2000,
+        "environment_steps": 288018,
+        "success_rate": 1.0,
+        "mean_reward": 1.0,
+        "recovery_events": 0,
+        "recovery_actions": 0,
+        "elapsed_seconds": 145.584819666,
+        "optimizer_updates": 70755
+      },
+      "evaluation_summary": {
+        "episodes": 5000,
+        "environment_steps": 4708127,
+        "success_rate": 0.083,
+        "mean_reward": 0.083,
+        "recovery_events": 34565,
+        "recovery_actions": 1022415
+      }
+    },
+    {
+      "warmup_episodes": 5000,
+      "additional_warmup_episodes": 3000,
+      "warmup_summary": {
+        "episodes": 5000,
+        "environment_steps": 711336,
+        "success_rate": 1.0,
+        "mean_reward": 1.0,
+        "recovery_events": 0,
+        "recovery_actions": 0,
+        "elapsed_seconds": 414.4948027079999,
+        "optimizer_updates": 176585
+      },
+      "evaluation_summary": {
+        "episodes": 5000,
+        "environment_steps": 4224886,
+        "success_rate": 0.2158,
+        "mean_reward": 0.2158,
+        "recovery_events": 36775,
+        "recovery_actions": 1088151
+      }
+    }
+  ],
+  "best_observed_warmup_episodes": 5000
+}

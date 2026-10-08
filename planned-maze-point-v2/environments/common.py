@@ -1,3 +1,8 @@
+"""Continuous PointMaze adapter shared by Open and Medium.
+
+Only the action space is discretized. The network still observes continuous
+position, velocity and goal coordinates; the grid is used by the planner.
+"""
 from __future__ import annotations
 
 from typing import Dict, Tuple

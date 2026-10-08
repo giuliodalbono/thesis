@@ -1,3 +1,8 @@
+"""Double DQN with replay, target synchronization and PointMaze recovery.
+
+Recovery assumes the first two observation entries are Cartesian position.
+Both experiment services construct this agent through agents.factory.
+"""
 from __future__ import annotations
 
 import random
@@ -45,6 +50,12 @@ class RecoveryConfig:
 
 
 class DQNAgent:
+    """Double DQN learner shared by both experiment services.
+
+    Planner demonstrations are ordinary replay transitions: there is no direct
+    imitation loss. The policy learns their rewards through the Bellman target.
+    Recovery takes precedence over epsilon-greedy actions during agent control.
+    """
     def __init__(self, state_size: int, action_vectors: np.ndarray, hp: DQNHyperparameters, recovery: RecoveryConfig, seed: int):
         random.seed(seed)
         np.random.seed(seed)
@@ -132,6 +143,7 @@ class DQNAgent:
         return action
 
     def store(self, transition: Transition) -> None:
+        """Only training phases call this; evaluation must never enter replay."""
         self.memory.append(transition)
         self.stored_environment_steps += 1
 
@@ -142,6 +154,7 @@ class DQNAgent:
         return sum(self.update() for _ in range(updates_per_training_event))
 
     def update(self) -> bool:
+        """One replay minibatch, Huber TD loss and gradient-clipped optimizer step."""
         if len(self.memory) < max(self.hp.batch_size, self.hp.learning_starts_transitions):
             return False
         states, actions, rewards, next_states, dones = zip(*random.sample(self.memory, self.hp.batch_size))

@@ -26,3 +26,26 @@ class PointMazeConfigValidation:
             raise ValueError("Recovery step counts must be positive")
         if not isinstance(self.output_dir, Path):
             raise ValueError("output_dir must be a pathlib.Path")
+
+    @property
+    def environment(self):
+        """The preset binds agent hyperparameters to one environment and planner."""
+        from environments import environment_for
+        return environment_for(self.env_id)
+
+    @property
+    def agent_name(self):
+        return "dqn"
+
+    @property
+    def planner_name(self):
+        return self.environment.planner_name
+
+    def to_dict(self):
+        """JSON-safe complete preset, including the selected implementations."""
+        from dataclasses import asdict
+        values = {key: str(value) if isinstance(value, Path) else value
+                  for key, value in asdict(self).items()}
+        values.update(agent_name=self.agent_name, planner_name=self.planner_name,
+                      configuration_class=type(self).__name__)
+        return values
