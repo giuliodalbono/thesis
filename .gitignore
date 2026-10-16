@@ -218,3 +218,5 @@ __marimo__/
 # Local training checkpoints
 resources/planned-deterministic-frozen-lake/checkpoints/
 resources/planned-point-maze/checkpoints/
+
+.deps/**

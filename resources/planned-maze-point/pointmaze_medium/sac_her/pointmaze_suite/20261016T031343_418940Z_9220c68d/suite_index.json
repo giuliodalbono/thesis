@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "description": "Five-seed PointMaze suite; follow aggregate paths for details.",
+  "studies": {
+    "open_dqn": {
+      "aggregate": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_open/dqn/pointmaze_open_dqn/20261015T141241_453034Z_d6bcb295/aggregate.json"
+    },
+    "medium_dqn": {
+      "aggregate": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/dqn/pointmaze_medium_dqn/20261016T023127_383764Z_fc60ff89/aggregate.json"
+    },
+    "medium_sac_her": {
+      "aggregate": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/sac_her/bc_multiseed/20261016T031343_415010Z_0c1c89be/aggregate.json"
+    }
+  }
+}

@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "study_name": "pointmaze_medium_dqn",
+  "config": {
+    "env_id": "PointMaze_Medium-v3",
+    "seed": 42,
+    "max_episode_steps": 1000,
+    "warmup_episode_counts": [
+      1000,
+      2000,
+      5000
+    ],
+    "evaluation_episodes": 5000,
+    "replay_capacity": 200000,
+    "batch_size": 256,
+    "learning_rate": 0.0003,
+    "gamma": 0.99,
+    "target_sync_updates": 5000,
+    "learning_starts_transitions": 5000,
+    "train_every_steps": 4,
+    "updates_per_training_event": 1,
+    "epsilon_start": 1.0,
+    "epsilon_final": 0.05,
+    "epsilon_decay_fraction": 0.75,
+    "stuck_detection_steps": 10,
+    "opposite_recovery_steps": 15,
+    "random_recovery_steps": 15,
+    "minimum_directional_progress": 0.002,
+    "output_dir": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point",
+    "agent_name": "dqn",
+    "planner_name": "point_maze_medium",
+    "configuration_class": "PointMazeMediumConfig"
+  },
+  "protocol": {
+    "environment": "PointMaze_Medium-v3",
+    "agent": "DQN",
+    "seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "planner_warmup_episodes": 1000,
+    "planned_train_episodes": 9000,
+    "plain_train_episodes": 10000,
+    "test_episodes": 5000,
+    "budget_unit": "episodes",
+    "equal_interaction_budget": false,
+    "deterministic_evaluation": true,
+    "evaluation_learns": false
+  },
+  "runs": [
+    {
+      "seed": 42,
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/dqn/comparison/20261015T162522_465057Z_363c0326/result.json",
+      "planner_warmup_success": 1.0,
+      "planned_post_warmup_success": 0.095,
+      "planned_final_success": 0.5162,
+      "plain_final_success": 0.6958,
+      "planned_pre_test_steps": 6791642,
+      "plain_pre_test_steps": 5554390,
+      "planned_optimizer_updates": 1696661,
+      "plain_optimizer_updates": 1387348
+    },
+    {
+      "seed": 43,
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/dqn/comparison/20261015T184709_369093Z_2069095b/result.json",
+      "planner_warmup_success": 1.0,
+      "planned_post_warmup_success": 0.227,
+      "planned_final_success": 0.5574,
+      "plain_final_success": 0.6432,
+      "planned_pre_test_steps": 6889013,
+      "plain_pre_test_steps": 5735177,
+      "planned_optimizer_updates": 1721004,
+      "plain_optimizer_updates": 1432545
+    },
+    {
+      "seed": 44,
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/dqn/comparison/20261015T212348_909525Z_85fcb554/result.json",
+      "planner_warmup_success": 1.0,
+      "planned_post_warmup_success": 0.1208,
+      "planned_final_success": 0.4874,
+      "plain_final_success": 0.5694,
+      "planned_pre_test_steps": 7104559,
+      "plain_pre_test_steps": 6780877,
+      "planned_optimizer_updates": 1774890,
+      "plain_optimizer_updates": 1693970
+    },
+    {
+      "seed": 45,
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/dqn/comparison/20261015T233919_442573Z_7c48a06e/result.json",
+      "planner_warmup_success": 1.0,
+      "planned_post_warmup_success": 0.133,
+      "planned_final_success": 0.6084,
+      "plain_final_success": 0.7214,
+      "planned_pre_test_steps": 6592315,
+      "plain_pre_test_steps": 6035438,
+      "planned_optimizer_updates": 1646829,
+      "plain_optimizer_updates": 1507610
+    },
+    {
+      "seed": 46,
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/dqn/comparison/20261016T023127_101236Z_5338561e/result.json",
+      "planner_warmup_success": 1.0,
+      "planned_post_warmup_success": 0.1724,
+      "planned_final_success": 0.4922,
+      "plain_final_success": 0.4002,
+      "planned_pre_test_steps": 7010936,
+      "plain_pre_test_steps": 8532026,
+      "planned_optimizer_updates": 1751485,
+      "plain_optimizer_updates": 2131757
+    }
+  ],
+  "summary": {
+    "planned_final_success": {
+      "n": 5,
+      "mean": 0.53232,
+      "sample_std": 0.050755413504374104,
+      "min": 0.4874,
+      "max": 0.6084
+    },
+    "plain_final_success": {
+      "n": 5,
+      "mean": 0.606,
+      "sample_std": 0.12889747864097265,
+      "min": 0.4002,
+      "max": 0.7214
+    },
+    "paired_planned_minus_plain": {
+      "n": 5,
+      "mean": -0.07368,
+      "sample_std": 0.10053741592064121,
+      "min": -0.17959999999999998,
+      "max": 0.09200000000000003
+    }
+  }
+}

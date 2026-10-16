@@ -1,0 +1,220 @@
+{
+  "schema_version": 1,
+  "config": {
+    "learning_rate": 0.0001,
+    "gamma": 0.99,
+    "tau": 0.001,
+    "batch_size": 256,
+    "replay_capacity": 200000,
+    "hidden_sizes": [
+      256,
+      256
+    ],
+    "learning_starts_transitions": 5000,
+    "train_every_steps": 8,
+    "updates_per_training_event": 1,
+    "her_sampled_goals": 4,
+    "entropy_coefficient": 0.1,
+    "her_strategy": "future",
+    "device": "cpu",
+    "env_id": "PointMaze_Medium-v3",
+    "seed": 42,
+    "max_episode_steps": 1000,
+    "warmup_episode_counts": [
+      200,
+      300,
+      400,
+      600,
+      800,
+      1000
+    ],
+    "evaluation_episodes": 500,
+    "progress_every_episodes": 10,
+    "torch_threads": 1,
+    "output_dir": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point",
+    "agent_name": "sac_her",
+    "planner_name": "point_maze_medium",
+    "configuration_class": "PointMazeMediumSACConfig"
+  },
+  "protocol": {
+    "environment": "PointMaze_Medium-v3",
+    "agent": "SAC+HER",
+    "seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ],
+    "planner_warmup_episodes": 400,
+    "planned_train_episodes": 50,
+    "test_episodes": 200,
+    "behavior_cloning_weight": {
+      "initial": 1.0,
+      "final": 0.4
+    },
+    "plain_budget": "matched to each planned condition's pre-test environment steps",
+    "deterministic_evaluation": true,
+    "evaluation_learns": false
+  },
+  "runs": [
+    {
+      "seed": 42,
+      "condition": "planner_behavior_cloning",
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/sac_her/comparison/20261016T023511_605749Z_4239947b/result.json",
+      "planned_final_success": 0.86,
+      "plain_final_success": 0.075,
+      "planned_pre_test_steps": 85229,
+      "plain_pre_test_steps": 85598,
+      "planned_training_episodes": 50,
+      "plain_training_episodes": 94
+    },
+    {
+      "seed": 42,
+      "condition": "planner_only",
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/sac_her/comparison/20261016T023949_546204Z_bc74e97e/result.json",
+      "planned_final_success": 0.085,
+      "plain_final_success": 0.105,
+      "planned_pre_test_steps": 103374,
+      "plain_pre_test_steps": 103398,
+      "planned_training_episodes": 50,
+      "plain_training_episodes": 113
+    },
+    {
+      "seed": 43,
+      "condition": "planner_behavior_cloning",
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/sac_her/comparison/20261016T024324_022062Z_9805d64a/result.json",
+      "planned_final_success": 0.8,
+      "plain_final_success": 0.09,
+      "planned_pre_test_steps": 78522,
+      "plain_pre_test_steps": 79289,
+      "planned_training_episodes": 50,
+      "plain_training_episodes": 89
+    },
+    {
+      "seed": 43,
+      "condition": "planner_only",
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/sac_her/comparison/20261016T024757_162943Z_07e9b4e8/result.json",
+      "planned_final_success": 0.095,
+      "plain_final_success": 0.09,
+      "planned_pre_test_steps": 100412,
+      "plain_pre_test_steps": 100634,
+      "planned_training_episodes": 50,
+      "plain_training_episodes": 111
+    },
+    {
+      "seed": 44,
+      "condition": "planner_behavior_cloning",
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/sac_her/comparison/20261016T025148_210955Z_3274fda9/result.json",
+      "planned_final_success": 0.63,
+      "plain_final_success": 0.115,
+      "planned_pre_test_steps": 84209,
+      "plain_pre_test_steps": 84504,
+      "planned_training_episodes": 50,
+      "plain_training_episodes": 95
+    },
+    {
+      "seed": 44,
+      "condition": "planner_only",
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/sac_her/comparison/20261016T025629_889989Z_eefd8eb3/result.json",
+      "planned_final_success": 0.085,
+      "plain_final_success": 0.105,
+      "planned_pre_test_steps": 102123,
+      "plain_pre_test_steps": 102924,
+      "planned_training_episodes": 50,
+      "plain_training_episodes": 115
+    },
+    {
+      "seed": 45,
+      "condition": "planner_behavior_cloning",
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/sac_her/comparison/20261016T030023_085417Z_4b2e95ca/result.json",
+      "planned_final_success": 0.76,
+      "plain_final_success": 0.03,
+      "planned_pre_test_steps": 84185,
+      "plain_pre_test_steps": 84962,
+      "planned_training_episodes": 50,
+      "plain_training_episodes": 92
+    },
+    {
+      "seed": 45,
+      "condition": "planner_only",
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/sac_her/comparison/20261016T030512_875576Z_bf14f713/result.json",
+      "planned_final_success": 0.14,
+      "plain_final_success": 0.035,
+      "planned_pre_test_steps": 104568,
+      "plain_pre_test_steps": 105412,
+      "planned_training_episodes": 50,
+      "plain_training_episodes": 113
+    },
+    {
+      "seed": 46,
+      "condition": "planner_behavior_cloning",
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/sac_her/comparison/20261016T030901_789836Z_90d51cc1/result.json",
+      "planned_final_success": 0.745,
+      "plain_final_success": 0.095,
+      "planned_pre_test_steps": 85175,
+      "plain_pre_test_steps": 85928,
+      "planned_training_episodes": 50,
+      "plain_training_episodes": 105
+    },
+    {
+      "seed": 46,
+      "condition": "planner_only",
+      "report": "/Users/giulio/PycharmProjects/pythonProject/thesis/resources/planned-maze-point/pointmaze_medium/sac_her/comparison/20261016T031343_208984Z_dddf7a1f/result.json",
+      "planned_final_success": 0.045,
+      "plain_final_success": 0.1,
+      "planned_pre_test_steps": 103408,
+      "plain_pre_test_steps": 103576,
+      "planned_training_episodes": 50,
+      "plain_training_episodes": 125
+    }
+  ],
+  "conditions": {
+    "planner_behavior_cloning": {
+      "planned_final_success": {
+        "n": 5,
+        "mean": 0.759,
+        "sample_std": 0.08473488065725944,
+        "min": 0.63,
+        "max": 0.86
+      },
+      "plain_final_success": {
+        "n": 5,
+        "mean": 0.08099999999999999,
+        "sample_std": 0.031898275815473165,
+        "min": 0.03,
+        "max": 0.115
+      },
+      "paired_planned_minus_plain": {
+        "n": 5,
+        "mean": 0.678,
+        "sample_std": 0.10311401456640121,
+        "min": 0.515,
+        "max": 0.785
+      }
+    },
+    "planner_only": {
+      "planned_final_success": {
+        "n": 5,
+        "mean": 0.09,
+        "sample_std": 0.03391164991562635,
+        "min": 0.045,
+        "max": 0.14
+      },
+      "plain_final_success": {
+        "n": 5,
+        "mean": 0.087,
+        "sample_std": 0.029706901555025894,
+        "min": 0.035,
+        "max": 0.105
+      },
+      "paired_planned_minus_plain": {
+        "n": 5,
+        "mean": 0.0030000000000000053,
+        "sample_std": 0.06088924371348359,
+        "min": -0.05500000000000001,
+        "max": 0.10500000000000001
+      }
+    }
+  }
+}
