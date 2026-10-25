@@ -138,7 +138,7 @@ Evaluation does not update weights or replay, and temporary evaluation state is 
 
 ## PointMaze suite and current observations
 
-`run_pointmaze_suite()` runs the following studies over seeds **42–46**:
+`run_pointmaze_suite()` runs the selected studies for every supported PointMaze environment. The Large SAC+HER+BC study uses its independently selected confirmation seeds **47–51**; the other studies retain their own declared seed protocols.
 
 | Study | Planner warm-up | Planned normal training | Plain normal training | Episodes per evaluation |
 | --- | ---: | ---: | --- | ---: |
@@ -146,6 +146,8 @@ Evaluation does not update weights or replay, and temporary evaluation state is 
 | Medium DQN | 1,000 | 9,000 | 10,000 episodes | 5,000 |
 | Medium SAC+HER+BC | 400 | 50 | Match planned real training steps | 200 |
 | Medium SAC+HER planner-only control | 400 | 50 | Match this control's real training steps | 200 |
+| Large DQN | 100 | 900 | 1,000 episodes | 500 |
+| Large SAC+HER+BC | 400 | 50 | Match planned real training steps | Per selected study configuration |
 
 The SAC study runs a separate plain baseline for each planned condition. It finishes the last plain episode after reaching the target, so actual steps can overshoot by less than one maximum episode length. This is approximate interaction matching, not exact matching of computation or episode count. DQN matches total episode counts, including warm-up, and reports the resulting unequal interaction counts.
 
@@ -193,7 +195,7 @@ cd planned-maze-point
 python main.py
 ```
 
-The default `main()` currently runs the **Large SAC+HER+BC versus plain SAC+HER tuning pilot** using seed 42: 400 planner warm-up episodes, 50 autonomous-training episodes, and 200 episodes per evaluation. BC weight is 1.0 during warm-up and linearly changes to 0.4 during autonomous training. Only the planned arm uses BC; plain SAC has neither demonstrations nor an imitation loss. Plain SAC trains to match the planned arm's total learning interactions, including warm-up, finishing its final episode (so the match can overshoot by less than one episode). The `plain_train_episodes=0` placeholder does not disable plain training in this mode. HER is enabled for both arms; recovery is disabled. Evaluations use deterministic actor actions, no planner, and no learning. The planned policy is evaluated after warm-up and after training; both arms use matched final-test tasks. Intermediate training evaluations are disabled for this short pilot. The no-BC control remains callable through `run_large_sac_comparison()`. To run the established Open/Medium suite, select `run_pointmaze_suite()`.
+`main()` is a safe selector: no experiment runs until you uncomment exactly one service call. The selector is grouped into DQN warm-up sweeps, DQN comparisons, SAC+HER warm-up sweeps, SAC+HER comparisons, and SAC+HER+BC studies for Open, Medium, and Large where that method is available. `run_pointmaze_suite()` launches the long-running Open, Medium, and Large suite.
 
 Individual comparisons and sweeps are callable without running the suite. For example, from the PointMaze directory:
 
@@ -229,9 +231,10 @@ Available entry points in `main.py` are:
 - `run_large_smoke_tests()`: tiny DQN, SAC+HER and SAC+HER+BC comparisons, both cumulative sweeps, and report/plot generation. Reduced networks and episode limits are exclusive to this check; its success rates are not performance measurements.
 - `run_large_warmup_sweep()` / `run_large_sac_warmup_sweep()`: cumulative planner-only warm-up sweeps, using the selected preset's checkpoints and evaluation count. The SAC sweep does **not** enable BC.
 - `run_large_comparison()` / `run_large_sac_comparison()`: independently configurable phase budgets, including zero warm-up or training. SAC supports all existing guidance modes and optional interaction matching.
-- `run_large_dqn_study()` / `run_large_sac_bc_study()`: existing multi-seed study services with Large configurations. The latter includes the planner-only control and interaction-matched plain baselines.
+- `run_large_dqn_pointmaze_study()`: selected five-seed Large DQN study. `run_large_dqn_study()` remains the flexible multi-seed version for exploratory budgets.
+- `run_large_sac_bc_study()`: flexible Large BC multi-seed service, including the planner-only control by default.
 - `run_large_sac_bc_comparison()`: single-seed BC tuning; warm-up/training budgets and initial/final BC weights are explicit arguments. Pass a Large SAC configuration to change seed or SAC hyperparameters.
-- `run_large_sac_bc_stability_study()`: after tuning, repeat the selected BC candidate versus plain SAC across seeds 42–46. By default it does not repeat the no-BC control; set `include_planner_only_control=True` to include that ablation. Existing Medium study defaults still include the control. Each comparison saves its report and graphs; the aggregate includes post-warm-up and final success, step counts, and paired final-success differences. It is not launched by the current `main()`.
+- `run_large_sac_bc_stability_study()`: the frozen Large BC candidate versus plain SAC across confirmation seeds 47–51. By default it does not repeat the no-BC control; set `include_planner_only_control=True` to include that ablation. Existing Medium study defaults still include the control. Each comparison saves its report and graphs; the aggregate includes post-warm-up and final success, step counts, and paired final-success differences.
 
 Change one factor at a time during BC tuning. The initial 1.0-to-0.4 weights are a transfer candidate, not a confirmed Large optimum, and the current corrected BC implementation must be evaluated on its own results. Once a candidate is selected, pass its **same configuration, phase budgets and BC weights** to the stability study; tuning-run overrides are not automatically persisted as study defaults. Keep some seeds unused during tuning if independent confirmation is needed. Interaction-matched plain baselines are rerun for each candidate because BC can change the planned agent's episode lengths.
 

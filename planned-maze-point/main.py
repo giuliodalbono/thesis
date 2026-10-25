@@ -148,10 +148,22 @@ def run_large_sac_comparison(config=None, **budgets):
     return result, path
 
 
+def run_large_dqn_pointmaze_study(config=None):
+    return run_dqn_multiseed(
+        config or PointMazeLargeConfig(),
+        seeds=(42, 43, 44, 45, 46),
+        planner_warmup_episodes=100,
+        planned_train_episodes=900,
+        plain_train_episodes=1_000,
+        test_episodes=500,
+        study_name="pointmaze_large_dqn",
+    )
+
+
 def run_large_dqn_study(config=None, **budgets):
-    """Multi-seed pilot; override budgets after the Large tuning phase."""
-    options = dict(planner_warmup_episodes=25, planned_train_episodes=25,
-                   plain_train_episodes=50, test_episodes=100,
+    """Flexible Large DQN multi-seed service retained for exploratory runs."""
+    options = dict(planner_warmup_episodes=100, planned_train_episodes=900,
+                   plain_train_episodes=1000, test_episodes=500,
                    study_name="pointmaze_large_dqn")
     options.update(budgets)
     return run_dqn_multiseed(config or PointMazeLargeConfig(), **options)
@@ -219,16 +231,26 @@ def run_medium_dqn_pointmaze_study(config=None):
 
 
 def run_pointmaze_suite():
-    """Run the established Open/Medium suite; Large is separate until tuned."""
+    """Run the selected Open, Medium, and Large PointMaze studies.
+
+    This is intentionally long-running. Each study saves its own aggregate
+    before the suite index is written, so an interrupted suite preserves
+    completed study reports but does not resume the interrupted study.
+    """
     results = {}
     results["open_dqn"] = run_open_dqn_pointmaze_study()
     results["medium_dqn"] = run_medium_dqn_pointmaze_study()
     sac_config = PointMazeMediumSACConfig(train_every_steps=8)
     results["medium_sac_her"] = run_medium_sac_bc_stability_study(sac_config)
+    results["large_dqn"] = run_large_dqn_pointmaze_study()
+    results["large_sac_her_bc"] = run_large_sac_bc_stability_study()
     directory = new_run_directory(sac_config, "pointmaze_suite")
     suite_path = write_json(directory / "suite_index.json", {
         "schema_version": 1,
-        "description": "Five-seed PointMaze suite; follow aggregate paths for details.",
+        "description": (
+            "PointMaze suite across Open, Medium, and Large; "
+            "follow aggregate paths for protocol details."
+        ),
         "studies": {
             name: {"aggregate": str(path)}
             for name, (_, path) in results.items()
@@ -258,35 +280,40 @@ def _run_sac_comparison(config, warmup, training, plain_training, tests, interva
 
 
 def main():
-    """Select a service; currently tune Large SAC+HER+BC vs plain SAC+HER."""
+    """Select one experiment service; all calls below are intentionally inactive."""
     # Select one experiment here.
+
+    # DQN planner-only warm-up sweeps.
     # run_open_warmup_sweep()
     # run_medium_warmup_sweep()
+    # run_large_warmup_sweep()
+
+    # DQN planned-versus-plain comparisons.
     # run_open_comparison()
     # run_medium_comparison()
+    # run_large_comparison()
+
+    # SAC+HER planner-only warm-up sweeps; behavior cloning is disabled.
     # run_open_sac_warmup_sweep()
     # run_medium_sac_warmup_sweep()
-
-    # Full reproducible PointMaze suite. For one study only, call one
-    # of run_open_dqn_pointmaze_study(), run_medium_dqn_pointmaze_study(), or
-    # run_medium_sac_bc_stability_study() instead.
-    # run_pointmaze_suite()
-    # run_large_smoke_tests()
-    # run_large_warmup_sweep()
-    # run_large_planner_validation()
-    # run_large_comparison()
     # run_large_sac_warmup_sweep()
-    # run_large_sac_comparison()  # Planner-only/no-BC control.
-    # Later: pass the chosen parameters to run_large_sac_bc_stability_study().
-    # First tuning candidate, seed 42; plain SAC+HER has no BC or planner access.
-    # run_large_sac_bc_comparison(
-    #     planner_warmup_episodes=400,
-    #     planned_train_episodes=50,
-    #     test_episodes=200,
-    #     behavior_cloning_initial_weight=1.0,
-    #     behavior_cloning_final_weight=0.4,
-    # )
-    run_large_sac_bc_stability_study()
+
+    # SAC+HER planned-versus-plain comparisons without behavior cloning.
+    # run_open_sac_comparison()
+    # run_medium_sac_comparison()
+    # run_large_sac_comparison()
+
+    # SAC+HER+BC comparisons and repeated-seed studies.
+    # run_medium_sac_bc_stability_study()
+    # run_large_sac_bc_comparison()
+    # run_large_sac_bc_stability_study()
+
+    # Full reproducible PointMaze suite. It includes Open, Medium, and Large.
+    run_pointmaze_suite()
+
+    # Large-only development/validation helpers.
+    # run_large_smoke_tests()
+    # run_large_planner_validation()
 
 
 if __name__ == "__main__":

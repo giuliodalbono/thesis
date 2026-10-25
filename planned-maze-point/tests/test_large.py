@@ -67,7 +67,7 @@ class LargeTests(unittest.TestCase):
         from unittest.mock import patch
         import main
         expected = dict(planner_warmup_episodes=400, planned_train_episodes=50,
-                        plain_train_episodes=0, test_episodes=200,
+                        plain_train_episodes=0, test_episodes=500,
                         evaluation_interval_episodes=0,
                         planner_guidance_mode="planner_only",
                         behavior_cloning_initial_weight=0.0,
@@ -94,13 +94,13 @@ class LargeTests(unittest.TestCase):
         config = PointMazeLargeSACConfig(seed=42)
         with patch.object(main, "run_planned_vs_plain", return_value={}) as run, \
              patch.object(main, "save_planned_vs_plain_result", return_value=Path("report.json")):
-            main.main()
+            main.run_large_sac_bc_comparison()
             args, options = run.call_args
             self.assertEqual(args, (config,))
             self.assertEqual(options["planner_guidance_mode"], "planner_behavior_cloning")
             self.assertEqual(options["planner_warmup_episodes"], 400)
             self.assertEqual(options["planned_train_episodes"], 50)
-            self.assertEqual(options["test_episodes"], 200)
+            self.assertEqual(options["test_episodes"], 500)
             self.assertEqual(options["behavior_cloning_initial_weight"], 1.0)
             self.assertEqual(options["behavior_cloning_final_weight"], .4)
             self.assertTrue(options["match_plain_interaction_budget"])
@@ -113,7 +113,7 @@ class LargeTests(unittest.TestCase):
         with patch.object(main, "run_sac_bc_multiseed") as study:
             main.run_large_sac_bc_stability_study()
             self.assertEqual(study.call_args.args, (config,))
-            self.assertEqual(study.call_args.kwargs["seeds"], (42, 43, 44, 45, 46))
+            self.assertEqual(study.call_args.kwargs["seeds"], (47, 48, 49, 50, 51))
             self.assertFalse(study.call_args.kwargs["include_planner_only_control"])
             main.run_large_sac_bc_stability_study(custom, seeds=(45, 46),
                 behavior_cloning_initial_weight=.8, behavior_cloning_final_weight=.2,
@@ -122,6 +122,39 @@ class LargeTests(unittest.TestCase):
             self.assertEqual(study.call_args.kwargs["behavior_cloning_initial_weight"], .8)
             self.assertEqual(study.call_args.kwargs["behavior_cloning_final_weight"], .2)
             self.assertTrue(study.call_args.kwargs["include_planner_only_control"])
+
+    def test_pointmaze_suite_includes_large_studies(self):
+        from unittest.mock import patch
+        import main
+        results = {name: ({"study": name}, Path(name + ".json")) for name in (
+            "open", "medium", "medium_sac", "large", "large_sac")}
+        with patch.object(main, "run_open_dqn_pointmaze_study", return_value=results["open"]) as open_dqn, \
+             patch.object(main, "run_medium_dqn_pointmaze_study", return_value=results["medium"]) as medium_dqn, \
+             patch.object(main, "run_medium_sac_bc_stability_study", return_value=results["medium_sac"]) as medium_sac, \
+             patch.object(main, "run_large_dqn_pointmaze_study", return_value=results["large"]) as large_dqn, \
+             patch.object(main, "run_large_sac_bc_stability_study", return_value=results["large_sac"]) as large_sac, \
+             patch.object(main, "new_run_directory", return_value=Path("suite")), \
+             patch.object(main, "write_json", return_value=Path("suite/suite_index.json")) as write:
+            suite, path = main.run_pointmaze_suite()
+        self.assertEqual(set(suite), {
+            "open_dqn", "medium_dqn", "medium_sac_her", "large_dqn", "large_sac_her_bc"})
+        self.assertEqual(path, Path("suite/suite_index.json"))
+        open_dqn.assert_called_once_with()
+        medium_dqn.assert_called_once_with()
+        large_dqn.assert_called_once_with()
+        large_sac.assert_called_once_with()
+        medium_config = medium_sac.call_args.args[0]
+        self.assertEqual(medium_config.env_id, "PointMaze_Medium-v3")
+        self.assertEqual(medium_config.train_every_steps, 8)
+        suite_index = write.call_args.args[1]
+        self.assertEqual(set(suite_index["studies"]), set(suite))
+
+    def test_main_is_a_safe_selector(self):
+        from unittest.mock import patch
+        import main
+        with patch.object(main, "run_pointmaze_suite") as suite:
+            self.assertIsNone(main.main())
+            suite.assert_not_called()
 
     def test_geometry_routes_and_config_roundtrip(self):
         for cls in (PointMazeLargeConfig, PointMazeLargeSACConfig):
