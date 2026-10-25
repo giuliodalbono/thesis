@@ -2,10 +2,12 @@
 from typing import Union
 from .point_maze_open import PointMazeOpenConfig
 from .point_maze_medium import PointMazeMediumConfig
-from .sac import PointMazeOpenSACConfig, PointMazeMediumSACConfig
+from .point_maze_large import PointMazeLargeConfig
+from .sac import PointMazeOpenSACConfig, PointMazeMediumSACConfig, PointMazeLargeSACConfig
 
 PointMazeConfig = Union[PointMazeOpenConfig, PointMazeMediumConfig,
-                       PointMazeOpenSACConfig, PointMazeMediumSACConfig]
+                       PointMazeLargeConfig, PointMazeOpenSACConfig,
+                       PointMazeMediumSACConfig, PointMazeLargeSACConfig]
 
 
 def config_from_dict(values):
@@ -13,10 +15,12 @@ def config_from_dict(values):
     from dataclasses import fields
     from pathlib import Path
     classes = {"PointMaze_Open-v3": PointMazeOpenConfig,
-               "PointMaze_Medium-v3": PointMazeMediumConfig}
+               "PointMaze_Medium-v3": PointMazeMediumConfig,
+               "PointMaze_Large-v3": PointMazeLargeConfig}
     if values.get("agent_name", "dqn") == "sac_her":
         classes = {"PointMaze_Open-v3": PointMazeOpenSACConfig,
-                   "PointMaze_Medium-v3": PointMazeMediumSACConfig}
+                   "PointMaze_Medium-v3": PointMazeMediumSACConfig,
+                   "PointMaze_Large-v3": PointMazeLargeSACConfig}
     elif values.get("agent_name", "dqn") != "dqn":
         raise ValueError("Unknown saved agent")
     cls = classes[values["env_id"]]

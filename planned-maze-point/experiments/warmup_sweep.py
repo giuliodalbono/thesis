@@ -61,6 +61,9 @@ def _run_sweep(config):
         "configuration": config.to_dict(),
         "protocol": {
             "cumulative_single_agent": True,
+            "planner_guidance_mode": "planner_only",
+            "behavior_cloning": False,
+            "evaluation_uses_planner": False,
             "evaluation_episodes_per_checkpoint": config.evaluation_episodes,
             "evaluation_epsilon": None if sac else 0.0,
             "deterministic_actor": sac,

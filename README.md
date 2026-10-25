@@ -16,7 +16,8 @@ This is an experimental repository: protocols, controls, and measurement convent
 | PointMaze Open DQN | Continuous motion mapped to a free-space grid | Planned versus plain Double DQN | Does planner warm-up help on a simple continuous navigation task? |
 | PointMaze Medium DQN | Continuous motion mapped to a grid containing walls | Planned versus plain Double DQN | Does the same transfer mechanism remain useful with obstacles? |
 | PointMaze SAC+HER | Continuous goal-conditioned control with the same grid planner | Planner-only warm-up, guidance/noise variants, BC variant, and plain SAC+HER | How can an actor learn from and retain planner demonstrations? |
-| PointMaze warm-up sweeps | Open or Medium; DQN or SAC+HER | One learner evaluated at cumulative demonstration budgets | How much planner experience produces a useful autonomous policy? |
+| PointMaze Large pilot | Larger wall-containing grid with the shared navigation controller | DQN, SAC+HER and SAC+HER+BC; existing comparison protocols | Does transfer scale to longer obstacle-constrained routes? Infrastructure validated; tuning pending. |
+| PointMaze warm-up sweeps | Open, Medium or Large; DQN or SAC+HER | One learner evaluated at cumulative demonstration budgets | How much planner experience produces a useful autonomous policy? |
 
 ## Repository layout
 
@@ -35,7 +36,7 @@ planned-maze-point/
   agents/                  DQN, SAC, HER replay, BC and evaluation state handling
   environments/            Environment adapters, grid geometry and action mapping
   configurations/          Agent/environment presets
-  planners/                Open and Medium grid planners
+  planners/                Shared BFS/steering with Open, Medium and Large wrappers
   experiments/             Comparisons, sweeps, multi-seed studies and validation
   reporting/               JSON reports and comparison figures
   tests/                   Small-budget regression checks
@@ -73,9 +74,9 @@ FrozenLake SAC is also planner-free. Because Stable-Baselines3 SAC expects conti
 
 ## 2. PointMaze: planning over a continuous environment
 
-PointMaze uses Gymnasium Robotics environments **`PointMaze_Open-v3`** and **`PointMaze_Medium-v3`** with episodic goal reaching. The environment retains continuous position, velocity and dynamics. Only the planner's representation is a discrete grid; the neural agents continue to observe continuous state and goal information.
+PointMaze uses Gymnasium Robotics environments **`PointMaze_Open-v3`**, **`PointMaze_Medium-v3`** and **`PointMaze_Large-v3`** with episodic goal reaching. The environment retains continuous position, velocity and dynamics. Only the planner's representation is a discrete grid; the neural agents continue to observe continuous state and goal information.
 
-The Open and Medium planners use breadth-first search on their environment-specific grids and steer toward successive waypoints. The Medium grid includes walls and prevents diagonal corner cutting. Steering translates waypoint directions into force actions and includes a near-target braking rule. Thus demonstrations combine a known map, deterministic routing, and a hand-written motion controller. They are not trajectories produced by an uninformed learner.
+All three planners share breadth-first search and waypoint steering. Medium and Large also share wall-grid geometry, including prevention of diagonal corner cutting; Open retains its original free-space grid and neighbour order. Steering translates waypoint directions into force actions and includes a near-target braking rule. Thus demonstrations combine a known map, deterministic routing, and a hand-written motion controller. They are not trajectories produced by an uninformed learner.
 
 The experiment sequence is:
 
@@ -131,7 +132,7 @@ Exploratory work tested gradual planner handover, planner-action noise, and BC e
 
 ### Cumulative warm-up sweeps
 
-Sweeps are available for Open and Medium with either DQN or SAC+HER. A single agent retains its network, replay and optimizer between cumulative checkpoints. For `(250, 500, 1000)`, collection proceeds for 250 episodes, then 250 more, then 500 more, with evaluation at each checkpoint.
+Sweeps are available for Open, Medium and Large with either DQN or SAC+HER. A single agent retains its network, replay and optimizer between cumulative checkpoints. For `(250, 500, 1000)`, collection proceeds for 250 episodes, then 250 more, then 500 more, with evaluation at each checkpoint.
 
 Evaluation does not update weights or replay, and temporary evaluation state is restored before collection resumes. The current sweep studies planner-only experience; its results should not be assumed to apply directly to the BC comparison protocol. Warm-up selection is exploratory and should be validated using independent training seeds and evaluation tasks.
 
@@ -148,7 +149,7 @@ Evaluation does not update weights or replay, and temporary evaluation state is 
 
 The SAC study runs a separate plain baseline for each planned condition. It finishes the last plain episode after reaching the target, so actual steps can overshoot by less than one maximum episode length. This is approximate interaction matching, not exact matching of computation or episode count. DQN matches total episode counts, including warm-up, and reports the resulting unequal interaction counts.
 
-The October 2026 suite produced the following final success rates (mean ± sample standard deviation across five training seeds):
+The historical October 2026 suite produced the following final success rates (mean ± sample standard deviation across five training seeds). **The BC row predates the actor-gradient correction described below and must be rerun before drawing conclusions about the corrected BC implementation.**
 
 | Study | Planned | Plain |
 | --- | ---: | ---: |
@@ -157,11 +158,15 @@ The October 2026 suite produced the following final success rates (mean ± sampl
 | Medium SAC+HER+BC | 75.90% ± 8.47% | 8.10% ± 3.19% |
 | Medium SAC+HER planner-only control | 9.00% ± 3.39% | 8.70% ± 2.97% |
 
-These results suggest that planner warm-up alone has mixed value, while explicit actor imitation substantially helps the short-budget Medium SAC experiment. They do not show that abstraction alone accounts for the BC advantage, or that plain SAC cannot succeed with longer training. Open DQN wins on three of five seeds; Medium DQN wins on one. Small average DQN differences should not be described as established improvements without uncertainty analysis.
+These historical results suggest that planner warm-up alone has mixed value. The apparent BC advantage requires revalidation with the corrected implementation; it cannot currently be attributed to the intended BC objective alone. The results also do not show that plain SAC cannot succeed with longer training. Open DQN wins on three of five seeds; Medium DQN wins on one. Small average DQN differences should not be described as established improvements without uncertainty analysis.
 
 BC also does not completely prevent degradation: in the suite, seed 44 fell from 87% after warm-up to 63% after autonomous training. The five seeds were reused from development, so this suite is a replication of the selected protocol, not independent confirmation on unseen seeds. Rerunning identical seeds is useful for reproducibility but does not increase the number of independent trials.
 
 The corresponding aggregate reports are under [PointMaze resources](resources/planned-maze-point/). Historical report paths may reference an earlier checkout or the previous `planned-maze-point-v2` directory name; locate the same run ID in the current resource tree if an absolute path no longer resolves.
+
+### BC implementation correction
+
+During Large integration, a gradient-reset error was corrected in the custom SAC+BC update: it cleared the critic optimizer before the actor backward pass instead of clearing the actor optimizer. That allowed stale actor gradients to accumulate across updates. New BC comparisons and multi-seed aggregates record `bc_implementation_version: 2` and `actor_gradient_reset: "per_update"`. Historical reports are preserved, but BC results from before this correction are not directly comparable. Standard SAC without BC and DQN do not use the affected update routine. A regression test checks that injected stale gradients cannot influence a new update.
 
 ## Installation and running
 
@@ -188,7 +193,7 @@ cd planned-maze-point
 python main.py
 ```
 
-The default `main()` launches the **full suite**, including long Medium DQN runs. To select one study, replace its call with `run_open_dqn_pointmaze_study()`, `run_medium_dqn_pointmaze_study()`, or `run_medium_sac_bc_stability_study()`.
+The default `main()` currently runs the **Large SAC+HER+BC versus plain SAC+HER tuning pilot** using seed 42: 400 planner warm-up episodes, 50 autonomous-training episodes, and 200 episodes per evaluation. BC weight is 1.0 during warm-up and linearly changes to 0.4 during autonomous training. Only the planned arm uses BC; plain SAC has neither demonstrations nor an imitation loss. Plain SAC trains to match the planned arm's total learning interactions, including warm-up, finishing its final episode (so the match can overshoot by less than one episode). The `plain_train_episodes=0` placeholder does not disable plain training in this mode. HER is enabled for both arms; recovery is disabled. Evaluations use deterministic actor actions, no planner, and no learning. The planned policy is evaluated after warm-up and after training; both arms use matched final-test tasks. Intermediate training evaluations are disabled for this short pilot. The no-BC control remains callable through `run_large_sac_comparison()`. To run the established Open/Medium suite, select `run_pointmaze_suite()`.
 
 Individual comparisons and sweeps are callable without running the suite. For example, from the PointMaze directory:
 
@@ -212,6 +217,39 @@ result, path = run_open_comparison(
 
 Equivalent entry points exist for Medium DQN and Open/Medium SAC. Configuration classes bind agent settings to the appropriate environment and planner. Importing PointMaze `main` does not launch training.
 
+### Large: validation first, then tuning
+
+Large reuses the agent implementations, episode runner, cumulative sweeps, comparison services and reporting. Its additions are a map, environment registration, thin planner wrapper and two configuration presets. `PointMazeLargeConfig` inherits the Medium DQN settings; `PointMazeLargeSACConfig` starts from the Medium SAC settings with one update event per eight interactions. Both allow **2,000 steps per episode**. These are initial transfer settings, not tuned Large configurations.
+
+The first Large DQN sweep (seed 42, 5,000 evaluations per checkpoint) scored 19.66%, 19.18% and 14.22% after 1,000, 2,000 and 5,000 planner episodes, respectively; planner success was 100%. Subsequent shorter sweeps across seeds 42–44 selected 100 episodes as a working budget by mean success, not a validated optimum. DQN evaluation includes the existing recovery controller; it is not an unassisted greedy-policy measurement. The SAC+HER screening sweep searches its own checkpoints independently, retaining the existing learning settings (including fixed alpha 0.1 and one update event per eight interactions). Its smaller 200-episode evaluations are for candidate selection; promising counts need larger evaluations and additional seeds.
+
+Available entry points in `main.py` are:
+
+- `run_large_planner_validation()`: planner execution in the real environment, without learning.
+- `run_large_smoke_tests()`: tiny DQN, SAC+HER and SAC+HER+BC comparisons, both cumulative sweeps, and report/plot generation. Reduced networks and episode limits are exclusive to this check; its success rates are not performance measurements.
+- `run_large_warmup_sweep()` / `run_large_sac_warmup_sweep()`: cumulative planner-only warm-up sweeps, using the selected preset's checkpoints and evaluation count. The SAC sweep does **not** enable BC.
+- `run_large_comparison()` / `run_large_sac_comparison()`: independently configurable phase budgets, including zero warm-up or training. SAC supports all existing guidance modes and optional interaction matching.
+- `run_large_dqn_study()` / `run_large_sac_bc_study()`: existing multi-seed study services with Large configurations. The latter includes the planner-only control and interaction-matched plain baselines.
+- `run_large_sac_bc_comparison()`: single-seed BC tuning; warm-up/training budgets and initial/final BC weights are explicit arguments. Pass a Large SAC configuration to change seed or SAC hyperparameters.
+- `run_large_sac_bc_stability_study()`: after tuning, repeat the selected BC candidate versus plain SAC across seeds 42–46. By default it does not repeat the no-BC control; set `include_planner_only_control=True` to include that ablation. Existing Medium study defaults still include the control. Each comparison saves its report and graphs; the aggregate includes post-warm-up and final success, step counts, and paired final-success differences. It is not launched by the current `main()`.
+
+Change one factor at a time during BC tuning. The initial 1.0-to-0.4 weights are a transfer candidate, not a confirmed Large optimum, and the current corrected BC implementation must be evaluated on its own results. Once a candidate is selected, pass its **same configuration, phase budgets and BC weights** to the stability study; tuning-run overrides are not automatically persisted as study defaults. Keep some seeds unused during tuning if independent confirmation is needed. Interaction-matched plain baselines are rerun for each candidate because BC can change the planned agent's episode lengths.
+
+For example, to schedule a later exploratory SAC sweep, explicitly select checkpoints and evaluation length:
+
+```python
+from dataclasses import replace
+from configurations import PointMazeLargeSACConfig
+from main import run_large_sac_warmup_sweep
+
+config = replace(PointMazeLargeSACConfig(),
+                 warmup_episode_counts=(50, 100, 200),
+                 evaluation_episodes=100)
+result, path = run_large_sac_warmup_sweep(config)
+```
+
+The initial planner validation succeeded on 100/100 episodes (reset seeds 42–141; 23,780 total interactions). Tests also compare the map and coordinate transform with the installed environment and check wall-safe routes for every free-cell start/goal pair. This validates the controller and plumbing, not Large agent learning performance or a universally reliable planner. Large is intentionally not added to the long-running default suite until tuning is complete.
+
 ### Run FrozenLake
 
 Edit `planned-deterministic-frozen-lake/main.py` to choose `RUN_DQN`, `RUN_PPO`, `RUN_SAC`, `SELECTED_MAPS`, and the budgets, then run:
@@ -231,6 +269,7 @@ PointMaze reports live under `resources/planned-maze-point/<environment>/<agent>
 - `comparison/<run-id>/comparison.png` shows planned and plain rewards, the warm-up boundary, exploration information, and test success percentages.
 - SAC's `success_by_interactions.png` plots available evaluations against real training interactions.
 - `warmup_sweep/<run-id>/summary.json` stores cumulative warm-up/evaluation summaries.
+- `planner_validation/<run-id>/result.json` records planner-only physical execution; `smoke/<run-id>/summary.json` links integration-check outputs.
 - `pointmaze_open_dqn/`, `pointmaze_medium_dqn/`, and `bc_multiseed/` contain study aggregates.
 - `pointmaze_medium/sac_her/pointmaze_suite/<run-id>/suite_index.json`, relative to the PointMaze resource root, links the three study aggregates.
 

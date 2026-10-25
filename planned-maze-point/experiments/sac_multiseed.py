@@ -1,12 +1,12 @@
 """Repeated-seed SAC+HER ablation for planner behaviour cloning.
 
-Each seed produces two independently saved comparisons: planner warm-up with
-actor behaviour cloning, and the planner-only control.  In each comparison the
+Each seed produces a BC comparison and optionally a planner-only control.
+The default retains both conditions for existing Medium callers. In each comparison the
 plain arm is stopped at the planned arm's real environment-interaction budget.
 The aggregate JSON contains only concise, seed-level outcome statistics.
 """
 from dataclasses import replace
-from math import sqrt
+from math import sqrt, isfinite
 from pathlib import Path
 
 from reporting.artifacts import new_run_directory, write_json
@@ -28,6 +28,7 @@ def _summary(values):
 def _outcome(result):
     """Select the held-out tests and actual pre-test training interactions."""
     return {
+        "planned_post_warmup_success": result["planned"]["post_warmup_test_summary"]["success_rate"],
         "planned_final_success": result["planned"]["test_summary"]["success_rate"],
         "plain_final_success": result["plain"]["test_summary"]["success_rate"],
         "planned_pre_test_steps": result["planned"]["pre_test_environment_steps"],
@@ -37,36 +38,44 @@ def _outcome(result):
     }
 
 
-def run_medium_sac_bc_multiseed(config, seeds=(42, 43, 44, 45, 46),
+def run_sac_bc_multiseed(config, seeds=(42, 43, 44, 45, 46),
                                  planner_warmup_episodes=400,
                                  planned_train_episodes=50,
                                  test_episodes=200,
-                                 behavior_cloning_final_weight=0.4):
-    """Run the stable BC candidate and planner-only control over several seeds.
+                                 behavior_cloning_final_weight=0.4, *,
+                                 behavior_cloning_initial_weight=1.0,
+                                 include_planner_only_control=True):
+    """Evaluate a BC candidate and optional planner-only control across seeds.
 
     Both conditions use planner actions for warm-up.  Only the BC condition
     adds planner-demonstration loss to the SAC actor.  The plain control uses
     no planner and receives an interaction-matched environment-step budget.
     """
-    if config.agent_name != "sac_her" or config.env_id != "PointMaze_Medium-v3":
-        raise ValueError("Use PointMazeMediumSACConfig for this medium-maze SAC study")
+    config.validate()
+    if config.agent_name != "sac_her":
+        raise ValueError("Use a SAC+HER configuration")
     if not seeds or any(not isinstance(seed, int) or isinstance(seed, bool) for seed in seeds):
         raise ValueError("seeds must be a non-empty sequence of integers")
-    if behavior_cloning_final_weight <= 0.0:
-        raise ValueError("The BC candidate must retain a positive final weight")
+    if not isinstance(include_planner_only_control, bool):
+        raise ValueError("include_planner_only_control must be a boolean")
+    if not isfinite(behavior_cloning_initial_weight) or behavior_cloning_initial_weight <= 0.0:
+        raise ValueError("Initial BC weight must be finite and positive")
+    if not isfinite(behavior_cloning_final_weight) or behavior_cloning_final_weight < 0.0:
+        raise ValueError("Final BC weight must be finite and nonnegative")
 
-    conditions = (
+    conditions = [
         ("planner_behavior_cloning", {
             "planner_guidance_mode": "planner_behavior_cloning",
-            "behavior_cloning_initial_weight": 1.0,
+            "behavior_cloning_initial_weight": behavior_cloning_initial_weight,
             "behavior_cloning_final_weight": behavior_cloning_final_weight,
         }),
-        ("planner_only", {
+    ]
+    if include_planner_only_control:
+        conditions.append(("planner_only", {
             "planner_guidance_mode": "planner_only",
             "behavior_cloning_initial_weight": 0.0,
             "behavior_cloning_final_weight": 0.0,
-        }),
-    )
+        }))
     records = []
     for seed in seeds:
         seeded_config = replace(config, seed=seed)
@@ -101,8 +110,11 @@ def run_medium_sac_bc_multiseed(config, seeds=(42, 43, 44, 45, 46),
             "planner_warmup_episodes": planner_warmup_episodes,
             "planned_train_episodes": planned_train_episodes,
             "test_episodes": test_episodes,
-            "behavior_cloning_weight": {"initial": 1.0,
+            "behavior_cloning_weight": {"initial": behavior_cloning_initial_weight,
                                          "final": behavior_cloning_final_weight},
+            "include_planner_only_control": include_planner_only_control,
+            "bc_implementation_version": 2,
+            "actor_gradient_reset": "per_update",
             "plain_budget": "matched to each planned condition's pre-test environment steps",
             "deterministic_evaluation": True,
             "evaluation_learns": False,
@@ -115,6 +127,8 @@ def run_medium_sac_bc_multiseed(config, seeds=(42, 43, 44, 45, 46),
         planned = [record["planned_final_success"] for record in values]
         plain = [record["plain_final_success"] for record in values]
         aggregate["conditions"][condition_name] = {
+            "planned_post_warmup_success": _summary(
+                [record["planned_post_warmup_success"] for record in values]),
             "planned_final_success": _summary(planned),
             "plain_final_success": _summary(plain),
             "paired_planned_minus_plain": _summary(
@@ -126,3 +140,10 @@ def run_medium_sac_bc_multiseed(config, seeds=(42, 43, 44, 45, 46),
     aggregate_path = write_json(directory / "aggregate.json", aggregate)
     print("\nSaved multi-seed aggregate: {}".format(aggregate_path), flush=True)
     return aggregate, Path(aggregate_path)
+
+
+def run_medium_sac_bc_multiseed(config, *args, **kwargs):
+    """Compatibility wrapper for existing Medium callers."""
+    if config.env_id != "PointMaze_Medium-v3":
+        raise ValueError("Use a Medium SAC configuration")
+    return run_sac_bc_multiseed(config, *args, **kwargs)

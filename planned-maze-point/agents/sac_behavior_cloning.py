@@ -123,7 +123,7 @@ class PlannerRegularizedSAC(SAC):
                 bc_losses.append(bc_loss.item())
 
             actor_losses.append(actor_loss.item())
-            self.critic.optimizer.zero_grad()
+            self.actor.optimizer.zero_grad()
             actor_loss.backward()
             self.actor.optimizer.step()
 

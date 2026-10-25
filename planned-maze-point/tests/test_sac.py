@@ -288,6 +288,9 @@ class SACTests(unittest.TestCase):
             self.assertEqual([r["warmup_summary"]["episodes"] for r in report["checkpoints"]], [1, 2, 3])
             self.assertFalse(report["protocol"]["recovery_can_activate_during_evaluation"])
             self.assertTrue(report["protocol"]["her_enabled"])
+            self.assertEqual(report["protocol"]["planner_guidance_mode"], "planner_only")
+            self.assertFalse(report["protocol"]["behavior_cloning"])
+            self.assertFalse(report["protocol"]["evaluation_uses_planner"])
             self.assertEqual(list(Path(tmp).rglob("*.json")), [path])
 
     def test_comparison_both_envs_and_zero_budgets(self):

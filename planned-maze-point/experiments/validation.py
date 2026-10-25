@@ -10,6 +10,8 @@ from agents import create_agent
 from environments.common import flatten_observation
 from planners import planner_for_env
 from .runner import seed_everything, run_episode, summarize
+from environments.common import ACTION_TABLE, transition_success
+from reporting.artifacts import new_run_directory, write_json
 
 def run_warmup_trial(config: PointMazeConfig, warmup_episodes: int) -> Dict[str, object]:
     """Train a fresh DQN only from planner episodes, then test immediately."""
@@ -64,33 +66,46 @@ def run_planner_validation(
     if episodes < 1:
         raise ValueError("episodes must be positive")
     seed_everything(config.seed)
-    env = config.environment.create(config.max_episode_steps)
-    observation, _ = env.reset(seed=config.seed)
-    agent = create_agent(config, flatten_observation(observation).size, env.action_space.n)
+    # Validate the physical controller without constructing a neural agent.
+    # Both action interfaces execute the same force vectors.
+    continuous = config.agent_name == "sac_her"
+    env = config.environment.create(config.max_episode_steps, continuous=continuous)
     planner = planner_for_env(config.env_id)
-    history = [
-        run_episode(env, agent, config.seed + index, planner, False, config)
-        for index in range(episodes)
-    ]
-    env.close()
+    history = []
+    started = time.perf_counter()
+    try:
+        for index in range(episodes):
+            observation, _ = env.reset(seed=config.seed + index)
+            reward_sum, steps, success = 0.0, 0, False
+            terminated = truncated = False
+            while not (terminated or truncated):
+                action_index = planner.action(observation)
+                action = ACTION_TABLE[action_index].copy() if continuous else action_index
+                observation, reward, terminated, truncated, info = env.step(action)
+                steps += 1
+                reward_sum += float(reward)
+                success = success or transition_success(float(reward), info)
+            history.append(dict(reward=reward_sum, steps=steps, success=success,
+                                recovery_events=0, recovery_actions=0,
+                                reset_seed=config.seed + index))
+    finally:
+        env.close()
     return {
+        "config": config.to_dict(),
         "environment": config.env_id,
         "planner": type(planner).__name__,
         "episodes": episodes,
         "history": history,
         "summary": summarize(history),
+        "elapsed_seconds": time.perf_counter() - started,
+        "learning": False,
     }
 
 
 def save_planner_validation(config: PointMazeConfig, validation: Dict[str, object]) -> Path:
     """Save a reproducible physical-environment planner validation report."""
-    config.output_dir.mkdir(parents=True, exist_ok=True)
-    path = config.output_dir / (
-        f"{config.environment_slug()}_planner_validation_"
-        f"{validation['episodes']}_episodes_seed_{config.seed}.json"
-    )
-    path.write_text(json.dumps(validation, indent=2))
-    return path
+    directory = new_run_directory(config, "planner_validation")
+    return write_json(directory / "result.json", validation)
 
 
 def save_trial(config: PointMazeConfig, trial: Dict[str, object]) -> Path:

@@ -1,7 +1,7 @@
 """SAC/HER settings, independent of DQN's epsilon and recovery configuration."""
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Union
+from typing import ClassVar, Union
 from .common import PointMazeConfigValidation
 
 
@@ -26,6 +26,7 @@ class SACSettings:
 
 @dataclass(frozen=True)
 class PointMazeOpenSACConfig(SACSettings, PointMazeConfigValidation):
+    expected_env_id: ClassVar[str] = "PointMaze_Open-v3"
     env_id: str = "PointMaze_Open-v3"
     seed: int = 42
     max_episode_steps: int = 500
@@ -43,8 +44,7 @@ class PointMazeOpenSACConfig(SACSettings, PointMazeConfigValidation):
         return "pointmaze_open"
 
     def validate(self):
-        expected = "PointMaze_Medium-v3" if isinstance(self, PointMazeMediumSACConfig) else "PointMaze_Open-v3"
-        if self.env_id != expected:
+        if self.env_id != self.expected_env_id:
             raise ValueError("Use the SAC preset matching the environment")
         positive = (self.max_episode_steps, self.batch_size, self.replay_capacity,
                     self.train_every_steps, self.updates_per_training_event,
@@ -80,6 +80,7 @@ class PointMazeOpenSACConfig(SACSettings, PointMazeConfigValidation):
 
 @dataclass(frozen=True)
 class PointMazeMediumSACConfig(PointMazeOpenSACConfig):
+    expected_env_id: ClassVar[str] = "PointMaze_Medium-v3"
     env_id: str = "PointMaze_Medium-v3"
     max_episode_steps: int = 1_000
     learning_starts_transitions: int = 5_000
@@ -87,3 +88,17 @@ class PointMazeMediumSACConfig(PointMazeOpenSACConfig):
 
     def environment_slug(self):
         return "pointmaze_medium"
+
+
+@dataclass(frozen=True)
+class PointMazeLargeSACConfig(PointMazeMediumSACConfig):
+    """Large planner-only screening sweep using Medium suite learning settings."""
+    expected_env_id: ClassVar[str] = "PointMaze_Large-v3"
+    env_id: str = "PointMaze_Large-v3"
+    max_episode_steps: int = 2_000
+    train_every_steps: int = 8
+    warmup_episode_counts: tuple = (50, 100, 200, 400, 600, 800, 1_000)
+    evaluation_episodes: int = 200
+
+    def environment_slug(self):
+        return "pointmaze_large"

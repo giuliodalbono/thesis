@@ -1,8 +1,9 @@
 """Bind each supported Gymnasium id to its coordinate/grid abstraction."""
 from dataclasses import dataclass
-from .common import make_env, ACTION_TABLE, flatten_observation
+from .common import make_env
 from .point_maze_open import PointMazeOpenGrid
 from .point_maze_medium import PointMazeMediumGrid
+from .point_maze_large import PointMazeLargeGrid
 
 
 @dataclass(frozen=True)
@@ -23,6 +24,8 @@ _ENVIRONMENTS = {
         "PointMaze_Open-v3", PointMazeOpenGrid, "point_maze_open"),
     "PointMaze_Medium-v3": PointMazeEnvironment(
         "PointMaze_Medium-v3", PointMazeMediumGrid, "point_maze_medium"),
+    "PointMaze_Large-v3": PointMazeEnvironment(
+        "PointMaze_Large-v3", PointMazeLargeGrid, "point_maze_large"),
 }
 
 
