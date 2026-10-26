@@ -291,7 +291,7 @@ def main():
     # DQN planned-versus-plain comparisons.
     # run_open_comparison()
     # run_medium_comparison()
-    run_large_comparison()
+    # run_large_comparison()
 
     # SAC+HER planner-only warm-up sweeps; behavior cloning is disabled.
     # run_open_sac_warmup_sweep()
@@ -301,12 +301,12 @@ def main():
     # SAC+HER planned-versus-plain comparisons without behavior cloning.
     # run_open_sac_comparison()
     # run_medium_sac_comparison()
-    run_large_sac_comparison()
+    # run_large_sac_comparison()
 
     # SAC+HER+BC comparisons and repeated-seed studies.
     # run_medium_sac_bc_stability_study()
     # run_large_sac_bc_comparison()
-    run_large_sac_bc_stability_study()
+    # run_large_sac_bc_stability_study()
 
     # Full reproducible PointMaze suite. It includes Open, Medium, and Large.
     run_pointmaze_suite()
